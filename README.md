@@ -13,10 +13,11 @@
 1. 사전작업
 
 - [preliminary_work/README.md](preliminary_work/README.md) 를 참고하라.
+- 제어 PC에서 teleop으로 두 파이프를 잡고 기본 자세까지 준비한다.
 
 2. 이후 작업 예상
 
-- 비전 PC의 양쪽 파이프 pose 토픽과 좌표변환(calibration)을 확인한다.
+- 사전작업 완료 후 비전 PC에서 ZED2i와 FoundationPose를 실행하고, 양쪽 파이프 pose 토픽과 좌표변환(calibration)을 확인한다.
 - 파이프 정렬 목표와 현재 pose를 이용하여 양팔의 목표 EEF pose를 계산한다.
 - teleop에서 자율제어로 넘기는 절차를 정하고, xArm 자율제어를 구현한다.
 - 실제 pose feedback으로 정렬을 보정하고, tracking lost 및 통신 중단 시 정지하도록 한다.
