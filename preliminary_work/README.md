@@ -2,13 +2,13 @@
 
 제어 PC에서 매니퓰레이터 초기화와 teleop 설정을 하고, 두 Pipe를 잡은 기본 자세까지 준비한다.
 FoundationPose는 이 사전작업이 끝난 후 비전 PC에서 별도로 실행한다.
-Control PC에서 터미널 1~5를 사용한다. 각 실행 프로그램은 해당 터미널에서 켜 둔다.
+Control PC에서 터미널 1~7을 사용한다. 초기화 프로그램은 완료 후 종료되며, 나머지 실행 프로그램은 해당 터미널에서 켜 둔다.
 
 ## 장치 준비
 
 Omega7, 양팔 xArm, RoHand 전원과 연결을 확인한다.
 
-## 1. 터미널 1 — Omega7 초기화 및 teleop
+## 1. 터미널 1 — Omega7 초기화
 
 초기화 중 장치가 움직이므로 손을 뗀다.
 
@@ -17,7 +17,28 @@ cd ~/Omega7
 ./autoinit_both
 ```
 
-초기화가 정상 완료되어 prompt가 돌아오면 같은 터미널에서 teleop을 실행한다.
+## 2. 터미널 2 — xArm 초기 자세 이동
+
+teleop 시작 전, Pipe를 잡지 않은 상태에서 실행한다. 양팔이 저장된 초기 자세 set 1로 동시에 이동한다.
+
+```
+0: 양팔 뒤쪽으로
+1: 양팔 뒤쪽으로 (0과 동일)
+2: 양팔 앞쪽으로
+3 이상은 사용 금지
+```
+
+```bash
+source ~/project/xarm_sdk/install/setup.bash
+cd ~/project/xarm_sdk/install/xarm_sdk/lib/xarm_sdk
+./init 1
+```
+
+양팔의 `Successfully moved to initial pose.` 출력을 확인한 뒤 다음 단계로 간다.
+
+## 3. 터미널 3 — teleop
+
+Omega7 초기화와 양팔 초기 자세 이동이 완료된 후 실행한다.
 Omega master와 양팔 xArm 제어가 함께 켜진다. xArm 제어 launch를 따로 중복 실행하지 않는다.
 
 ```bash
@@ -27,7 +48,7 @@ export ROS_LOCALHOST_ONLY=0
 ./run_teleop.sh
 ```
 
-## 2. 터미널 2 — RoHand /leftarm
+## 4. 터미널 4 — RoHand /leftarm
 
 손 드라이버는 시작 시 힘 센서를 영점화하므로 Pipe를 잡기 전에 실행한다.
 `/leftarm`, `/rightarm`은 설정상 이름이며, USB0/1과 실제 손의 좌우 대응은 확인이 필요하다.
@@ -44,7 +65,7 @@ ros2 run rohand rohand_modbus_ap001 --ros-args \
   -p 'hand_ids:=[2]' -r __ns:=/leftarm
 ```
 
-## 3. 터미널 3 — RoHand /rightarm
+## 5. 터미널 5 — RoHand /rightarm
 
 ```bash
 cd ~/project/robothand_ws/rohand_ws
@@ -58,36 +79,33 @@ ros2 run rohand rohand_modbus_ap001 --ros-args \
   -p 'hand_ids:=[2]' -r __ns:=/rightarm
 ```
 
-## 4. 터미널 4 — 손 개폐 발판
+## 6. 터미널 6 — 손 개폐 발판
 
-양손
+처음 한 번 wrapper만 빌드한다. `legacy`는 빌드 대상에 넣지 않는다.
 
 ```bash
-cd ~/project/robothand_ws/rohand_ctrl_ws
+cd ~/pipe_align_control_kkb
 source /opt/ros/humble/setup.bash
-source install/setup.bash
+colcon build --base-paths rohand_selector --symlink-install
+```
+
+기존 발판 프로그램이 켜져 있으면 그 프로그램만 종료한다. 손 드라이버와 teleop은 유지한다.
+
+```bash
+cd ~/pipe_align_control_kkb
+source /opt/ros/humble/setup.bash
+source ~/project/robothand_ws/rohand_ctrl_ws/install/local_setup.bash
+source install/local_setup.bash
 export ROS_DOMAIN_ID=8
 export ROS_LOCALHOST_ONLY=0
-ros2 launch rohand_foot_pedal_controller foot_pedal_hand_controller.launch.py
+ros2 run rohand_selector rohand_selector
 ```
 
-오른손 (사용자 실물 확인)
-
-```bash
-ros2 launch rohand_foot_pedal_controller foot_pedal_hand_controller.launch.py \
-  default_task_num:=2
-```
-
-반대손 (실물 확인 필요)
-
-```bash
-ros2 launch rohand_foot_pedal_controller foot_pedal_hand_controller.launch.py \
-  default_task_num:=1
-```
-
-- 기본 task 0은 **양손 동시 제어**다. task 입력이 있으면 대상 손이 바뀌므로 로그를 확인한다.
-- 발판을 누를 때마다 닫기/열기가 바뀐다. 프로그램 시작 후 첫 입력은 닫기다.
-- 프로그램을 켜기만 해서는 실제 손이 열리지 않는다.
+- 이 창에서 `l`: 왼손 후보(task 1, 실물 확인 필요), `r`: 오른손(task 2, 사용자 확인), `Space`: 양손을 선택한다. `b`는 무시한다.
+- 키는 선택만 바꾼다. `선택:` 표시를 확인한 뒤 발판으로 닫기/열기를 한다. 선택 변경 시 손별 개폐 상태는 유지된다.
+- 시작 선택은 양손이다. 프로그램 시작 시 자동 개폐하지 않으며, 첫 발판 입력은 닫기다. 재시작하면 내부 개폐 상태는 초기화된다.
+- Ctrl+C는 selector와 자신이 시작한 발판 프로그램만 종료한다. 열기 명령은 보내지 않는다.
+- 키/task 대응은 [selector.yaml](../rohand_selector/config/selector.yaml), 기존 프로그램의 전체 출력은 `log/rohand_selector/`에 저장한다.
 
 ## 수동 grasping
 
@@ -98,7 +116,7 @@ ros2 launch rohand_foot_pedal_controller foot_pedal_hand_controller.launch.py \
 
 Omega grip은 팔 이동용 clutch이고, 실제 손 개폐는 발판으로 한다.
 
-## 5. 터미널 5 — 준비 확인
+## 7. 터미널 7 — 준비 확인
 
 ```bash
 source ~/Omega7/setup_ros2.bash
