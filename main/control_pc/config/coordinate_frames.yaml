@@ -1,0 +1,48 @@
+# 좌표계 참조용이며 현재 실행에는 적용하지 않는다.
+# 위치는 m, 각도는 rad이며 RPY는 Rz(yaw) * Ry(pitch) * Rx(roll)이다.
+# parent_T_child는 child 좌표를 parent 좌표로 변환한다.
+
+frames:
+  base: world
+  left_base: left_robot_base_frame
+  # flange·TCP 이름은 정리용이며 실제 URDF/TF 링크명은 미확인이다.
+  left_flange: left_flange
+  left_tcp: left_tcp
+  right_base: right_robot_base_frame
+  right_flange: right_flange
+  right_tcp: right_tcp
+  camera: camera_left_optical_frame
+
+# 외부 xarm_params.yaml의 기존 값이며 실측 검증 전이다.
+# 회전행렬은 행 단위이며 base는 기존 코드의 world를 의미한다.
+fixed_transforms:
+  base_T_left_base:
+    translation_m: [-0.07670, 0.05885, -0.06801]
+    rotation_matrix:
+      - [0.0, 1.0, 0.0]
+      - [0.0, 0.0, 1.0]
+      - [1.0, 0.0, 0.0]
+  base_T_right_base:
+    translation_m: [-0.07670, -0.05885, -0.06801]
+    rotation_matrix:
+      - [0.0, -1.0, 0.0]
+      - [0.0, 0.0, -1.0]
+      - [1.0, 0.0, 0.0]
+  # 기존 TCP offset의 위치를 mm에서 m로 변환했다.
+  left_flange_T_left_tcp:
+    translation_m: [0.0, 0.116, 0.116]
+    rpy_rad: [0.0, 0.7853, 1.3089969390]
+  right_flange_T_right_tcp:
+    translation_m: [0.0, 0.116, 0.116]
+    rpy_rad: [0.0, 0.7853, 1.3089969390]
+
+# 관절각과 로봇 모델로 계산하며 고정값을 넣지 않는다.
+dynamic_transforms:
+  left_base_T_left_flange: null
+  right_base_T_right_flange: null
+
+# 실제 장착 링크와 optical frame까지의 변환은 확인 후 기록한다.
+# null은 미확인이며 단위행렬이나 영점 오프셋을 의미하지 않는다.
+camera_mount:
+  parent_frame: null
+  parent_T_camera: null
