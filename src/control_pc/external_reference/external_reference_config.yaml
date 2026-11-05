@@ -1,0 +1,41 @@
+# 참조용이며 현재 실행에 적용하지 않는다.
+# 준비 문서와 로컬 소스 기준이며 실제 구동은 검증하지 않았다.
+ros:
+  distribution: humble
+  ros_domain_id: 8
+  ros_localhost_only: 0
+  # 수신 확인용 설정. teleop 스크립트에는 RMW 지정이 없다.
+  rmw_implementation: rmw_fastrtps_cpp
+
+omega7:
+  teleop:
+    # run_teleop.sh의 위치 인자 기본값이다.
+    left_serial: "11403"
+    right_serial: "11468"
+    # 스크립트 내부 고정값이며 외부 옵션이 아니다.
+    fixed_launch_arguments:
+      command_mode: live
+      start_robots: true
+      enable_rotation: true
+
+xarm:
+  # 기존 준비 절차의 './init 1' 인자다.
+  initialization_args: [1]
+
+rohand_driver:
+  package: rohand
+  executable: rohand_modbus_ap001
+  baudrate: 115200
+  hand_ids: [2]
+  # USB와 실제 손의 좌우 대응은 확인이 필요하다.
+  left:
+    namespace: /leftarm
+    port_name: /dev/ttyUSB0
+  right:
+    namespace: /rightarm
+    port_name: /dev/ttyUSB1
+
+rohand_pedal:
+  # selector가 시작한다. 손 선택·입력 설정은 selector.yaml에 유지한다.
+  package: rohand_foot_pedal_controller
+  executable: foot_pedal_hand_controller

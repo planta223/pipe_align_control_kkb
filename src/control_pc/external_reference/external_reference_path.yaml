@@ -1,0 +1,30 @@
+# 참조용이며 현재 실행에 적용하지 않는다.
+# 상대 경로는 각 항목의 project_root 기준이다.
+ros:
+  setup: /opt/ros/humble/setup.bash
+
+omega7:
+  project_root: /home/rico/Omega7
+  initialization_executable: autoinit_both
+  teleop_script: run_teleop.sh
+  environment_setup: setup_ros2.bash
+  # environment_setup이 순서대로 불러오는 워크스페이스다.
+  robot_workspace_setup: /home/rico/HyeongJun_Workspace/install/setup.bash
+  master_workspace_setup: ros2_ws/install/setup.bash
+
+xarm:
+  project_root: /home/rico/project/xarm_sdk
+  workspace_setup: install/setup.bash
+  initialization_executable: install/xarm_sdk/lib/xarm_sdk/init
+
+rohand_driver:
+  project_root: /home/rico/project/robothand_ws/rohand_ws
+  workspace_setup: install/setup.bash
+  virtualenv_activate: rohand/bin/activate
+  executable: install/rohand/lib/rohand/rohand_modbus_ap001
+
+rohand_pedal:
+  project_root: /home/rico/project/robothand_ws/rohand_ctrl_ws
+  workspace_setup: install/local_setup.bash
+  executable: install/rohand_foot_pedal_controller/lib/rohand_foot_pedal_controller/foot_pedal_hand_controller
+  task_routes_file: install/rohand_foot_pedal_controller/share/rohand_foot_pedal_controller/config/task_hand_routes.yaml
