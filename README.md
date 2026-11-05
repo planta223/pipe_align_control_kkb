@@ -10,8 +10,8 @@
 - master : Omega 7
 - camera : zed2i
 
-- [vision_pc](vision_pc/README.md): 비전 코드의 임시 참조와 외부 의존성.
-- [control_pc](control_pc/README.md): RoHand selector와 향후 Auto Align 개발.
+- [vision_pc](src/vision_pc/README.md): 비전 코드의 임시 참조와 외부 의존성.
+- [control_pc](src/control_pc/README.md): RoHand selector와 향후 Auto Align 개발.
 
 1. 사전작업
 

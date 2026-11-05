@@ -6,6 +6,6 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 *.local.yaml
-/control_pc/build/
-/control_pc/install/
-/control_pc/log/
+/src/control_pc/build/
+/src/control_pc/install/
+/src/control_pc/log/

@@ -5,4 +5,4 @@
 - 각 `*_path.yaml`은 위치, `*_config.yaml`은 실행 조건을 기록한다. 모두 현재 미적용이며 wrapper는 없다. 기존 명령과 원본 프로그램의 동작은 유지한다.
 - `config/`: 향후 이 저장소의 비전 프로그램 설정을 둘 위치다.
 
-실행은 기존 [비전 PC 준비](../docs/preliminary_work/README_vision_pc.md)를 따른다. 현재 ROS 출력은 left Pipe만 지원한다.
+실행은 기존 [비전 PC 준비](../../docs/preliminary_work/README_vision_pc.md)를 따른다. 현재 ROS 출력은 left Pipe만 지원한다.

@@ -86,7 +86,7 @@ ros2 run rohand rohand_modbus_ap001 --ros-args \
 ```bash
 cd ~/pipe_align_control_kkb
 source /opt/ros/humble/setup.bash
-colcon build --base-paths control_pc/rohand_selector --symlink-install
+colcon build --base-paths src/control_pc/rohand_selector --symlink-install
 ```
 
 기존 발판 프로그램이 켜져 있으면 그 프로그램만 종료한다. 손 드라이버와 teleop은 유지한다.
@@ -105,7 +105,7 @@ ros2 run rohand_selector rohand_selector
 - 키는 선택만 바꾼다. `선택:` 표시를 확인한 뒤 발판으로 닫기/열기를 한다. 선택 변경 시 손별 개폐 상태는 유지된다.
 - 시작 선택은 양손이다. 프로그램 시작 시 자동 개폐하지 않으며, 첫 발판 입력은 닫기다. 재시작하면 내부 개폐 상태는 초기화된다.
 - Ctrl+C는 selector와 자신이 시작한 발판 프로그램만 종료한다. 열기 명령은 보내지 않는다.
-- 키/task 대응은 [selector.yaml](../../control_pc/rohand_selector/config/selector.yaml), 기존 프로그램의 전체 출력은 `log/rohand_selector/`에 저장한다.
+- 키/task 대응은 [selector.yaml](../../src/control_pc/rohand_selector/config/selector.yaml), 기존 프로그램의 전체 출력은 `log/rohand_selector/`에 저장한다.
 
 ## 수동 grasping
 
