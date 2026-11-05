@@ -9,3 +9,4 @@ __pycache__/
 /src/control_pc/build/
 /src/control_pc/install/
 /src/control_pc/log/
+/src/control_pc/_colcon/

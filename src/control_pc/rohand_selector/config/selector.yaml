@@ -8,4 +8,4 @@ right_label: "오른손"
 both_label: "양손"
 selection_topic: /rohand_selector/selection
 input_device: /dev/input/rohand_foot_pedal
-log_dir: /home/rico/pipe_align_control_kkb/log/rohand_selector
+log_dir: /home/rico/pipe_align_control_kkb/src/control_pc/_colcon/log/rohand_selector

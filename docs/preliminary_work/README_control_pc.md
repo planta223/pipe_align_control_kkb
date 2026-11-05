@@ -81,12 +81,18 @@ ros2 run rohand rohand_modbus_ap001 --ros-args \
 
 ## 6. 터미널 6 — 손 개폐 발판
 
-처음 한 번 wrapper만 빌드한다. `legacy`는 빌드 대상에 넣지 않는다.
+처음 한 번 wrapper만 빌드한다. 산출물은 `src/control_pc/_colcon/`에 모으며, `legacy`와 비전 코드는 빌드하지 않는다.
 
 ```bash
 cd ~/pipe_align_control_kkb
 source /opt/ros/humble/setup.bash
-colcon build --base-paths src/control_pc/rohand_selector --symlink-install
+mkdir -p src/control_pc/_colcon
+touch src/control_pc/_colcon/COLCON_IGNORE
+colcon --log-base src/control_pc/_colcon/log build \
+  --base-paths src/control_pc/rohand_selector \
+  --build-base src/control_pc/_colcon/build \
+  --install-base src/control_pc/_colcon/install \
+  --symlink-install
 ```
 
 기존 발판 프로그램이 켜져 있으면 그 프로그램만 종료한다. 손 드라이버와 teleop은 유지한다.
@@ -95,7 +101,7 @@ colcon build --base-paths src/control_pc/rohand_selector --symlink-install
 cd ~/pipe_align_control_kkb
 source /opt/ros/humble/setup.bash
 source ~/project/robothand_ws/rohand_ctrl_ws/install/local_setup.bash
-source install/local_setup.bash
+source src/control_pc/_colcon/install/local_setup.bash
 export ROS_DOMAIN_ID=8
 export ROS_LOCALHOST_ONLY=0
 ros2 run rohand_selector rohand_selector
@@ -105,7 +111,7 @@ ros2 run rohand_selector rohand_selector
 - 키는 선택만 바꾼다. `선택:` 표시를 확인한 뒤 발판으로 닫기/열기를 한다. 선택 변경 시 손별 개폐 상태는 유지된다.
 - 시작 선택은 양손이다. 프로그램 시작 시 자동 개폐하지 않으며, 첫 발판 입력은 닫기다. 재시작하면 내부 개폐 상태는 초기화된다.
 - Ctrl+C는 selector와 자신이 시작한 발판 프로그램만 종료한다. 열기 명령은 보내지 않는다.
-- 키/task 대응은 [selector.yaml](../../src/control_pc/rohand_selector/config/selector.yaml), 기존 프로그램의 전체 출력은 `log/rohand_selector/`에 저장한다.
+- 키/task 대응은 [selector.yaml](../../src/control_pc/rohand_selector/config/selector.yaml), 기존 프로그램의 전체 출력은 `src/control_pc/_colcon/log/rohand_selector/`에 저장한다.
 
 ## 수동 grasping
 
@@ -142,3 +148,55 @@ ros2 topic echo --once /right/robot/current/base_eef_pose
 4. 제어 PC에서 두 Pipe의 pose가 수신되는지 확인한다.
 
 터미널별 실행 명령은 비전 PC에서 확인 후 여기에 추가한다.
+
+## 8. 터미널 8 — 비전 pose 수신 확인
+
+비전 PC에서 [카메라와 FoundationPose](README_vision_pc.md)를 실행하고 두 Pipe tracking을 유지한다.
+아래 명령은 제어 PC의 새 터미널에서 실행한다. 별도 빌드나 구독 프로그램은 필요하지 않다.
+
+### ROS 환경 설정
+
+```bash
+source /opt/ros/humble/setup.bash
+export ROS_DOMAIN_ID=8
+export ROS_LOCALHOST_ONLY=0
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+```
+
+### 양쪽 publisher 확인
+
+```bash
+ros2 topic info -v /vision/left_pipe/pose
+ros2 topic info -v /vision/right_pipe/pose
+```
+
+두 토픽 모두 `Publisher count`가 1 이상이고, 타입이 `geometry_msgs/msg/PoseStamped`인지 확인한다.
+문서상 publisher QoS는 BEST_EFFORT / VOLATILE / depth 1이다.
+
+### 실제 메시지 수신 확인
+
+```bash
+timeout 10s ros2 topic echo --once /vision/left_pipe/pose \
+  --qos-reliability best_effort
+timeout 10s ros2 topic echo --once /vision/right_pipe/pose \
+  --qos-reliability best_effort
+```
+
+- 제어 PC에서 양쪽 모두 `header`와 `pose`가 출력되어야 실제 수신 성공이다. 토픽 발견만으로 판단하지 않는다.
+- `frame_id`는 `camera_left_optical_frame`이며, 위치는 m, 회전은 quaternion `x,y,z,w`다. 로봇 EEF가 아닌 Pipe pose다.
+- 출력 없이 10초 뒤 종료되면 해당 토픽의 수신은 아직 확인되지 않은 상태다.
+
+### 지속 갱신 확인
+
+아래 명령을 하나씩 실행한다. 각 토픽의 `header.stamp`가 계속 갱신되는지 확인하고 Ctrl+C로 종료한다.
+
+```bash
+ros2 topic echo /vision/left_pipe/pose --qos-reliability best_effort
+```
+
+```bash
+ros2 topic echo /vision/right_pipe/pose --qos-reliability best_effort
+```
+
+별도 `tracking_status` 토픽은 없다. 실제 손과 left/right Pipe 대응도 비전 PC의 초기 mask와 `--left-pipe-object-id` 설정으로 확인한다.
+이 단계는 PC 간 수신 확인이며, 자율 정렬 제어 연결은 포함하지 않는다.
