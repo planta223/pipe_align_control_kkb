@@ -9,12 +9,13 @@
 - **그다음 비전 PC에서 ZED2i와 FoundationPose를 실행한다.** 이 작업의 시작 조건은 grasping 완료다. 자동 grasping이나 공유제어는 이번 개발 범위가 아니다.
 - Omega7과 자율제어를 결합하는 공유제어는 연구실 선배가 추후 담당한다. AnyGrasp를 자율 정렬의 필수 경로로 추가하지 않는다.
 
-먼저 `README.md`, `preliminary_work/README.md`, `.gitignore`를 읽어라. 문서는 기존 스타일대로 짧고 실제 실행 가능한 내용만 기록한다.
+먼저 `README.md`, `docs/preliminary_work/README_control_pc.md`, `docs/preliminary_work/README_vision_pc.md`, `.gitignore`를 읽어라. 문서는 기존 스타일대로 짧고 실제 실행 가능한 내용만 기록한다.
 
 ## clone에 포함되는 것과 포함되지 않는 것
 
-- `preliminary_work/README.md`: 제어 PC 터미널 1~7의 준비 절차와 하단의 비전 PC 작업 목록.
-- `rohand_selector/`: 제어 PC의 손 선택용 wrapper. 비전 PC에서 실행할 프로그램이 아니다.
+- `docs/preliminary_work/README_control_pc.md`: 제어 PC 터미널 1~7의 준비 절차와 하단의 비전 PC 작업 목록.
+- `docs/preliminary_work/README_vision_pc.md`: 비전 PC의 실행 및 확인 절차.
+- `control_pc/rohand_selector/`: 제어 PC의 손 선택용 wrapper. 비전 PC에서 실행할 프로그램이 아니다.
 - `legacy/`, `build/`, `install/`, `log/`는 ignore되어 clone에 포함되지 않는다.
 - FoundationPose, AnyGrasp, ZED 프로젝트와 가상환경은 이 저장소가 아니라 **비전 PC에 이미 있는 환경**을 찾아야 한다. Control PC의 `/home/rico/...` 경로가 여기에도 있다고 가정하지 않는다.
 
@@ -24,7 +25,7 @@
 2. 현재 실행 중인 관련 프로세스와 ROS node/topic을 확인한다. 과거 코드, 현재 소스, 실제 실행 파일을 구분한다.
 3. grasping 후 기본 자세에서 두 Pipe를 추적하는 실제 절차를 찾는다. CAD 선택, mask/초기 등록, tracking 재시작·lost 처리를 포함한다. 손에 가려진 상태에서 초기 등록이 가능한지도 확인한다.
 4. 두 Pipe pose의 발행 인터페이스와 Control PC 수신 경로를 확인한다. 추가 adapter가 필요하면 기존 소스를 보존하고 이 저장소 안에 최소한으로 구성한다.
-5. `preliminary_work/README.md` 하단의 비전 PC 절에 터미널별 경로·환경 활성화·실행 명령·수신 확인 방법을 보완한다. 제어 PC 절차는 유지한다.
+5. `docs/preliminary_work/README_vision_pc.md`에 터미널별 경로·환경 활성화·실행 명령·수신 확인 방법을 보완한다. 제어 PC 절차는 유지한다.
 
 카메라·tracking 실행이 필요하면 먼저 해당 entry point에 로봇 구동 부작용이 없는지 확인한다. GUI의 전체 실행이나 로봇 이동 스크립트를 함께 시작하지 않는다.
 

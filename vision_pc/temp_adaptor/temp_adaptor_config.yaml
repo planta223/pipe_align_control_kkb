@@ -1,0 +1,14 @@
+# 참조용 기록이며 현재 실행에는 적용하지 않는다.
+# 기존 비전 PC 준비 문서의 실행 옵션을 기록한다. 기본값 자동 적용은 향후 구현한다.
+foundationpose_tracking:
+  camera_type: cam_ros_zed2i
+  mesh_scale_to_meter: 0.001
+  segmentation_mode: yolo
+  yolo_confidence: 0.5
+  yolo_class_id: 0
+  yolo_device: cuda:0
+  register_refine_iter: 5
+  track_refine_iter: 2
+  z_axis_stabilization: true
+  # 초기 mask의 pipe1이 실제 왼팔이 잡은 파이프인지 실행 시 확인한다.
+  left_pipe_object_id: pipe1

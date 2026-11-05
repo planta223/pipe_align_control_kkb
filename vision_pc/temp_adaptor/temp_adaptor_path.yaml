@@ -1,0 +1,9 @@
+# 참조용 기록이며 현재 실행에는 적용하지 않는다. 원본은 추후 이전한다.
+# 상대 경로는 foundationpose_tracking.project_root 기준이다.
+foundationpose_tracking:
+  project_root: /home/rico/Pipe_Align_kkb/MULTI_OBJECT_TRACKING
+  entrypoint: scripts/test_multi_object.py
+  pipe1_model_path: models/pipe1.obj
+  pipe2_model_path: models/pipe2.obj
+  yolo_model_path: models/yolo/pipe_seg.pt
+  dds_profile_path: ros2/fastdds_udp.xml

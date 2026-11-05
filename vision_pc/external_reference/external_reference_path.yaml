@@ -1,0 +1,13 @@
+# 참조용 기록이며 현재 실행에는 적용하지 않는다.
+# 상대 경로는 해당 항목의 project_root 기준이다.
+foundationpose_runtime:
+  project_root: /home/rico/Pipe_Align_kkb/FoundationPose
+  # 아래 경로는 기존 foundationpose container 내부 경로다.
+  python_executable: /opt/conda/envs/my/bin/python
+  ros_setup: /opt/ros/foxy/setup.bash
+zed2i_ros:
+  project_root: /home/rico/Pipe_Align_kkb/ZED2i_ROS
+  entrypoint: cam_zed.py
+  conda_setup: /home/rico/miniconda3/etc/profile.d/conda.sh
+  ros_setup: /opt/ros/humble/setup.bash
+anygrasp: null  # 경로 미확인. 현재 정렬의 필수 의존성이 아니다.

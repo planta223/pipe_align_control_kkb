@@ -3,3 +3,9 @@ legacy/
 /install/
 /log/
 __pycache__/
+*.py[cod]
+.pytest_cache/
+*.local.yaml
+/control_pc/build/
+/control_pc/install/
+/control_pc/log/

@@ -1,0 +1,21 @@
+# 참조용 기록이며 현재 실행에는 적용하지 않는다.
+foundationpose_runtime:
+  container_name: foundationpose
+  ros_distribution: foxy
+  ros_domain_id: 8
+  ros_localhost_only: 0
+  rmw_implementation: rmw_fastrtps_cpp
+zed2i_ros:
+  conda_environment: zed_cam
+  ros_distribution: humble
+  ros_domain_id: 8
+  ros_localhost_only: 0
+  rmw_implementation: rmw_fastrtps_cpp
+  # 기존 cam_zed.py 기본값. YAML에서 설정하는 동작은 아직 없다.
+  color_width: 1280
+  color_height: 720
+  color_fps: 15
+  depth_width: 640
+  depth_height: 360
+  depth_mode: NEURAL
+anygrasp: null  # 실행 설정 미확인.
