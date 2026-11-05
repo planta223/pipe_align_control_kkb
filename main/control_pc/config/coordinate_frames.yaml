@@ -13,21 +13,22 @@ frames:
   right_tcp: right_tcp
   camera: camera_left_optical_frame
 
-# 외부 xarm_params.yaml의 기존 값이며 실측 검증 전이다.
+# 위치·TCP는 외부 xarm_params.yaml의 기존 값이다.
+# base 회전은 외부 xarm_teleop_params.yaml의 R_world_base다. 실물 비교용 후보값이다.
 # 회전행렬은 행 단위이며 base는 기존 코드의 world를 의미한다.
 fixed_transforms:
   base_T_left_base:
     translation_m: [-0.07670, 0.05885, -0.06801]
     rotation_matrix:
-      - [0.0, 1.0, 0.0]
-      - [0.0, 0.0, 1.0]
-      - [1.0, 0.0, 0.0]
+      - [0.7640235367, 0.6313264797, 0.1330222216]
+      - [-0.0301536896, -0.1710100717, 0.9848077530]
+      - [0.6444833515, -0.7564274132, -0.1116188970]
   base_T_right_base:
     translation_m: [-0.07670, -0.05885, -0.06801]
     rotation_matrix:
-      - [0.0, -1.0, 0.0]
-      - [0.0, 0.0, -1.0]
-      - [1.0, 0.0, 0.0]
+      - [0.7640235367, -0.6313264797, 0.1330222216]
+      - [0.0301536896, -0.1710100717, -0.9848077530]
+      - [0.6444833515, 0.7564274132, -0.1116188970]
   # 기존 TCP offset의 위치를 mm에서 m로 변환했다.
   left_flange_T_left_tcp:
     translation_m: [0.0, 0.116, 0.116]
