@@ -1,0 +1,120 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+      Cell Size: 0.1
+      Plane Cell Count: 20
+      Reference Frame: <Fixed Frame>
+      Alpha: 0.35
+      Color: 130; 130; 130
+    - Class: rviz_default_plugins/RobotModel
+      Name: Dual xArm - init 1 target
+      Enabled: true
+      Visual Enabled: true
+      Collision Enabled: false
+      Alpha: 1
+      Description Source: Topic
+      Description Topic:
+        Value: /simulation_validation/robot_description
+        Reliability Policy: Reliable
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Depth: 1
+    - Class: rviz_default_plugins/TF
+      Name: All link frames (optional)
+      Enabled: false
+      Show Axes: true
+      Show Names: true
+      Show Arrows: false
+      Marker Scale: 0.25
+      Frames:
+        All Enabled: false
+        world:
+          Value: true
+        left_robot_base_frame:
+          Value: true
+        left_flange:
+          Value: true
+        left_tcp:
+          Value: true
+        right_robot_base_frame:
+          Value: true
+        right_flange:
+          Value: true
+        right_tcp:
+          Value: true
+        camera_left_optical_frame:
+          Value: true
+    - Class: rviz_default_plugins/Axes
+      Name: Base
+      Enabled: true
+      Reference Frame: world
+      Length: 0.15
+      Radius: 0.005
+    - Class: rviz_default_plugins/Axes
+      Name: Left base
+      Enabled: true
+      Reference Frame: left_robot_base_frame
+      Length: 0.12
+      Radius: 0.004
+    - Class: rviz_default_plugins/Axes
+      Name: Left flange
+      Enabled: true
+      Reference Frame: left_flange
+      Length: 0.1
+      Radius: 0.003
+    - Class: rviz_default_plugins/Axes
+      Name: Left TCP
+      Enabled: true
+      Reference Frame: left_tcp
+      Length: 0.1
+      Radius: 0.003
+    - Class: rviz_default_plugins/Axes
+      Name: Right base
+      Enabled: true
+      Reference Frame: right_robot_base_frame
+      Length: 0.12
+      Radius: 0.004
+    - Class: rviz_default_plugins/Axes
+      Name: Right flange
+      Enabled: true
+      Reference Frame: right_flange
+      Length: 0.1
+      Radius: 0.003
+    - Class: rviz_default_plugins/Axes
+      Name: Right TCP
+      Enabled: true
+      Reference Frame: right_tcp
+      Length: 0.1
+      Radius: 0.003
+  Global Options:
+    Fixed Frame: world
+    Background Color: 35; 38; 42
+    Frame Rate: 30
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/FocusCamera
+    - Class: rviz_default_plugins/Measure
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 2.3
+      Pitch: 0.4
+      Yaw: 0.8
+      Focal Point:
+        X: 0.15
+        Y: 0
+        Z: 0.2
+      Target Frame: <Fixed Frame>
+Window Geometry:
+  Width: 1280
+  Height: 900

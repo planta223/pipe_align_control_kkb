@@ -81,7 +81,7 @@ ros2 run rohand rohand_modbus_ap001 --ros-args \
 
 ## 6. 터미널 6 — 손 개폐 발판
 
-처음 한 번 제어 PC 소스를 빌드한다. 현재 패키지는 wrapper뿐이다. 산출물은 `main/control_pc/_colcon/`에 모으며, `legacy`와 비전 코드는 빌드하지 않는다.
+처음 한 번 손 선택 wrapper를 빌드한다. 산출물은 `main/control_pc/_colcon/`에 모으며, `legacy`와 비전 코드는 빌드하지 않는다.
 
 ```bash
 cd ~/pipe_align_control_kkb
@@ -90,6 +90,7 @@ mkdir -p main/control_pc/_colcon
 touch main/control_pc/_colcon/COLCON_IGNORE
 colcon --log-base main/control_pc/_colcon/log build \
   --base-paths main/control_pc/src \
+  --packages-select rohand_selector \
   --build-base main/control_pc/_colcon/build \
   --install-base main/control_pc/_colcon/install \
   --symlink-install

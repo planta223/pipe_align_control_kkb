@@ -1,11 +1,11 @@
-# 좌표계 참조용이며 현재 실행에는 적용하지 않는다.
+# 시각화 패키지가 읽는 좌표계 설정이며 실제 제어에는 적용하지 않는다.
 # 위치는 m, 각도는 rad이며 RPY는 Rz(yaw) * Ry(pitch) * Rx(roll)이다.
 # parent_T_child는 child 좌표를 parent 좌표로 변환한다.
 
 frames:
   base: world
   left_base: left_robot_base_frame
-  # flange·TCP 이름은 정리용이며 실제 URDF/TF 링크명은 미확인이다.
+  # flange·TCP는 시각화 모델에서 추가하는 좌표계 이름이다.
   left_flange: left_flange
   left_tcp: left_tcp
   right_base: right_robot_base_frame
@@ -41,8 +41,8 @@ dynamic_transforms:
   left_base_T_left_flange: null
   right_base_T_right_flange: null
 
-# 실제 장착 링크와 optical frame까지의 변환은 확인 후 기록한다.
+# 카메라는 토르소에 고정되어 있다. optical frame까지의 변환은 미확인이다.
 # null은 미확인이며 단위행렬이나 영점 오프셋을 의미하지 않는다.
 camera_mount:
-  parent_frame: null
+  parent_frame: base
   parent_T_camera: null
