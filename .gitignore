@@ -6,7 +6,4 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 *.local.yaml
-/src/control_pc/build/
-/src/control_pc/install/
-/src/control_pc/log/
-/src/control_pc/_colcon/
+/main/control_pc/_colcon/

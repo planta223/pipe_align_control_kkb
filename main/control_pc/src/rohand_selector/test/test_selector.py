@@ -25,7 +25,7 @@ from rohand_selector import selector as s
 
 
 PACKAGE = Path(__file__).resolve().parents[1]
-WORKSPACE = PACKAGE.parent
+WORKSPACE = PACKAGE.parents[1]
 LEGACY = Path('/home/rico/project/robothand_ws/rohand_ctrl_ws/install/rohand_foot_pedal_controller')
 ROUTES = LEGACY / 'share/rohand_foot_pedal_controller/config/task_hand_routes.yaml'
 SOURCE = LEGACY / 'lib/python3.10/site-packages/rohand_foot_pedal_controller/foot_pedal_hand_controller.py'
@@ -33,7 +33,7 @@ SOURCE = LEGACY / 'lib/python3.10/site-packages/rohand_foot_pedal_controller/foo
 
 class SelectorTests(unittest.TestCase):
     def setUp(self):
-        directory = WORKSPACE / 'build/rohand_selector/test_tmp'
+        directory = WORKSPACE / '_colcon/build/rohand_selector/test_tmp'
         directory.mkdir(parents=True, exist_ok=True)
         self.temp = tempfile.TemporaryDirectory(dir=directory)
         self.addCleanup(self.temp.cleanup)

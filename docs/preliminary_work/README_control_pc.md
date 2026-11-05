@@ -81,17 +81,17 @@ ros2 run rohand rohand_modbus_ap001 --ros-args \
 
 ## 6. 터미널 6 — 손 개폐 발판
 
-처음 한 번 wrapper만 빌드한다. 산출물은 `src/control_pc/_colcon/`에 모으며, `legacy`와 비전 코드는 빌드하지 않는다.
+처음 한 번 제어 PC 소스를 빌드한다. 현재 패키지는 wrapper뿐이다. 산출물은 `main/control_pc/_colcon/`에 모으며, `legacy`와 비전 코드는 빌드하지 않는다.
 
 ```bash
 cd ~/pipe_align_control_kkb
 source /opt/ros/humble/setup.bash
-mkdir -p src/control_pc/_colcon
-touch src/control_pc/_colcon/COLCON_IGNORE
-colcon --log-base src/control_pc/_colcon/log build \
-  --base-paths src/control_pc/rohand_selector \
-  --build-base src/control_pc/_colcon/build \
-  --install-base src/control_pc/_colcon/install \
+mkdir -p main/control_pc/_colcon
+touch main/control_pc/_colcon/COLCON_IGNORE
+colcon --log-base main/control_pc/_colcon/log build \
+  --base-paths main/control_pc/src \
+  --build-base main/control_pc/_colcon/build \
+  --install-base main/control_pc/_colcon/install \
   --symlink-install
 ```
 
@@ -101,7 +101,7 @@ colcon --log-base src/control_pc/_colcon/log build \
 cd ~/pipe_align_control_kkb
 source /opt/ros/humble/setup.bash
 source ~/project/robothand_ws/rohand_ctrl_ws/install/local_setup.bash
-source src/control_pc/_colcon/install/local_setup.bash
+source main/control_pc/_colcon/install/local_setup.bash
 export ROS_DOMAIN_ID=8
 export ROS_LOCALHOST_ONLY=0
 ros2 run rohand_selector rohand_selector
@@ -111,7 +111,7 @@ ros2 run rohand_selector rohand_selector
 - 키는 선택만 바꾼다. `선택:` 표시를 확인한 뒤 발판으로 닫기/열기를 한다. 선택 변경 시 손별 개폐 상태는 유지된다.
 - 시작 선택은 양손이다. 프로그램 시작 시 자동 개폐하지 않으며, 첫 발판 입력은 닫기다. 재시작하면 내부 개폐 상태는 초기화된다.
 - Ctrl+C는 selector와 자신이 시작한 발판 프로그램만 종료한다. 열기 명령은 보내지 않는다.
-- 키/task 대응은 [selector.yaml](../../src/control_pc/rohand_selector/config/selector.yaml), 기존 프로그램의 전체 출력은 `src/control_pc/_colcon/log/rohand_selector/`에 저장한다.
+- 키/task 대응은 [selector.yaml](../../main/control_pc/src/rohand_selector/config/selector.yaml), 기존 프로그램의 전체 출력은 `main/control_pc/_colcon/log/rohand_selector/`에 저장한다.
 
 ## 수동 grasping
 
