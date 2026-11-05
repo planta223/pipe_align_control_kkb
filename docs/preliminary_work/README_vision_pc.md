@@ -2,7 +2,7 @@
 
 [제어 PC 준비](README_control_pc.md)를 마치고 두 Pipe를 잡은 기본 자세에서 시작한다.
 비전 PC에서 ZED2i 영상을 발행하고, YOLO로 초기 mask를 생성한 뒤 FoundationPose로 두 Pipe를 추적한다.
-아래 명령은 2026-11-03 로컬 소스와 환경을 기준으로 정리했으며, 이번 문서 작성 중 카메라·tracking 실행과 Control PC 수신 시험은 하지 않았다.
+2026-11-05 로컬 소스 기준으로 좌우 pose 발행과 status 제거를 반영했다. 비전 실행은 사용자 정상 확인을 받았으며, Control PC의 실제 수신은 아직 확인 전이다.
 
 ## 실행 환경
 
@@ -12,7 +12,7 @@
 - FoundationPose: `~/Pipe_Align_kkb/FoundationPose`, 기존 Docker container `foundationpose`의 ROS2 Foxy + `/opt/conda/envs/my/bin/python`.
 - 호스트와 container 및 Control PC는 `ROS_DOMAIN_ID=8`, `ROS_LOCALHOST_ONLY=0`을 사용한다.
 
-기존 container는 조사 시 중지 상태였으며, host network와 `/home` mount가 설정되어 있다.
+기존 container는 host network와 `/home` mount가 설정되어 있다.
 아래에서는 기존 container만 시작한다. `FoundationPose/docker/run_container.sh`는 기존 container를 삭제하므로 사용하지 않는다.
 
 ## 1. 터미널 1 — ZED2i 영상 발행
@@ -42,7 +42,7 @@ python cam_zed.py
 
 ## 2. 터미널 2 — FoundationPose 두 Pipe 추적
 
-비전 PC의 그래픽 세션에서 새 터미널을 연다. YOLO mask 확인과 tracking 창을 표시하므로 기존 root container에 X11 접근을 허용한다.
+비전 PC의 그래픽 세션에서 새 터미널을 연다. tracking 창을 표시하므로 기존 root container에 X11 접근을 허용한다.
 
 ```bash
 xhost +si:localuser:root
@@ -53,6 +53,7 @@ docker exec -it -e DISPLAY="$DISPLAY" foundationpose bash
 이후 명령은 **container 안에서** 실행한다. 호스트 Humble과 구분하여 Foxy 환경을 사용한다.
 UDP profile은 기존 host/container 사이 DDS 통신용 설정이다.
 아래 명령은 초기 영상에서 왼팔이 잡은 Pipe가 영상 왼쪽(`pipe1`)에 있는 경우다. 영상 오른쪽에 있다면 `--left-pipe-object-id pipe2`로 바꾼다.
+지정한 ID가 left, 나머지 ID가 right로 발행된다. 양손이 각각 한 Pipe를 잡은 조건이며, 추적 중 영상 위치가 바뀌어도 이 대응은 유지된다.
 
 ```bash
 cd /home/rico/Pipe_Align_kkb/MULTI_OBJECT_TRACKING
@@ -88,6 +89,7 @@ export FASTRTPS_DEFAULT_PROFILES_FILE="$PWD/ros2/fastdds_udp.xml"
 
 로컬의 `models/yolo/pipe_seg.pt`를 사용한다. YOLO는 같은 고정 영상에서 confidence가 높은 두 instance를 골라 영상 왼쪽부터 `pipe1`, `pipe2`로 배정한다.
 mask 확인과 초기 등록이 끝날 때까지 Pipe 자세를 유지한다.
+아래 확인 창은 실행 명령에 `--show-auto-mask`를 추가한 경우에만 열린다. 생략하면 YOLO 검출 후 바로 초기 등록을 진행한다.
 
 1. `YOLO initial masks - press any key` 창에서 Pipe1(노란색), Pipe2(자홍색)의 mask가 각 Pipe를 덮는지 확인한다.
 2. `--left-pipe-object-id`로 지정한 객체가 실제 왼팔이 잡은 Pipe인지 확인한다. 영상의 좌우는 팔의 좌우를 의미하지 않는다.
@@ -108,47 +110,51 @@ export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 export ROS_DOMAIN_ID=8
 export ROS_LOCALHOST_ONLY=0
 ros2 topic list -t
-ros2 topic echo --once /vision/left_pipe/tracking_status \
-  --qos-reliability reliable --qos-durability transient_local
 ros2 topic echo --once /vision/left_pipe/pose \
+  --qos-reliability best_effort
+ros2 topic echo --once /vision/right_pipe/pose \
   --qos-reliability best_effort
 ```
 
-현재 로컬 소스는 **두 Pipe를 추적하지만 ROS 출력은 왼쪽 Pipe만 구현되어 있다.**
+현재 로컬 소스는 **두 Pipe를 추적하고 좌우 pose를 각각 발행한다.** 별도 tracking status 토픽은 없다.
 
 | Topic | Type | 내용 |
 |---|---|---|
 | `/vision/left_pipe/pose` | `geometry_msgs/msg/PoseStamped` | 왼팔에 대응시킨 Pipe의 유효한 pose |
-| `/vision/left_pipe/tracking_status` | `std_msgs/msg/String` | `REGISTERING` / `TRACKING` / `LOST` / `INVALID` |
+| `/vision/right_pipe/pose` | `geometry_msgs/msg/PoseStamped` | 오른팔에 대응시킨 Pipe의 유효한 pose |
 
 - pose는 camera optical frame에서 표현한 Pipe CAD frame의 변환 `C_T_P`다. 위치는 m, 회전은 quaternion `x,y,z,w`, frame은 `camera_left_optical_frame`이다.
 - 화면의 bounding box 중심 보정용 변환은 발행하지 않는다.
-- pose QoS는 BEST_EFFORT / VOLATILE / depth 1, status는 RELIABLE / TRANSIENT_LOCAL / depth 1이다.
+- 양쪽 pose QoS는 BEST_EFFORT / VOLATILE / depth 1이며, 동일 영상의 결과는 같은 timestamp와 frame을 사용한다.
 - pose timestamp는 입력 영상의 stamp를 유지한다. 현재 카메라 publisher가 붙이는 시각은 영상 발행 시각이며, ZED 하드웨어 취득 시각은 아니다.
 
 ## 4. Control PC — 수신 확인
 
-Control PC의 확인용 터미널에서 실행한다.
+비전 PC의 카메라와 tracking을 유지한 상태에서 Control PC의 확인용 터미널에서 실행한다. 별도 bridge나 자체 subscriber 프로그램은 필요하지 않다.
 
 ```bash
 source /opt/ros/humble/setup.bash
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 export ROS_DOMAIN_ID=8
 export ROS_LOCALHOST_ONLY=0
+ros2 topic info -v /vision/left_pipe/pose
+ros2 topic info -v /vision/right_pipe/pose
 ros2 topic echo --once /vision/left_pipe/pose \
+  --qos-reliability best_effort
+ros2 topic echo --once /vision/right_pipe/pose \
   --qos-reliability best_effort
 ```
 
 비전 PC에서의 수신과 별개로 Control PC에서 실제 메시지를 받아야 PC 간 통신이 확인된다.
-현재 오른쪽 Pipe publisher는 구현되어 있지 않아 양쪽 pose 수신까지 완료할 수 없다.
+양쪽 토픽의 publisher를 확인하고, 두 메시지가 실제 도착하는지 확인한다. 이는 수신 확인이며 자율 정렬 제어 연결을 의미하지 않는다.
 
 ## Tracking 재시작과 남은 작업
 
-- tracking 실패 시 왼쪽 status는 `LOST`, 잘못된 pose나 실행 예외 시 `INVALID`가 된다. 이전 pose에 새 timestamp를 붙여 재발행하지 않는다.
-- status는 상태가 바뀔 때만 발행한다. 프로세스나 통신이 끊기면 마지막 `TRACKING`만으로 유효성을 판단할 수 없다.
+- tracking 실패나 잘못된 pose는 해당 객체의 pose 발행을 중단한다. 이전 pose에 새 timestamp를 붙여 재발행하지 않는다.
+- 제어 PC는 양쪽 pose의 timestamp와 수신 timeout으로 최신성을 판단하고, 한쪽이라도 갱신이 끊기면 정렬을 중단해야 한다. timestamp 비교를 위해 양 PC 시간 동기화가 필요하다.
 - 자동 재등록과 tracking 중 재등록 키는 없다. 터미널 2의 tracking을 종료하고 같은 명령으로 다시 실행하여 YOLO 검출부터 진행한다. 카메라 publisher는 유지할 수 있다.
 - 손에 가려진 상태의 초기 등록 성공 여부, 실제 추적 성능, 양 PC 수신은 실행 확인이 필요하다.
-- 다음 구현은 기존 두 tracker 결과 중 오른쪽 Pipe의 pose/status를 추가 발행하는 것이다. camera-to-base calibration 검증과 로봇 자율제어 전환은 별도 작업이다.
+- camera-to-base calibration 검증과 로봇 자율제어 전환은 별도 작업이다.
 
 작업을 마치면 터미널 1의 카메라를 Ctrl+C로 종료하고, X11 접근 허용은 호스트에서 해제한다.
 
