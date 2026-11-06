@@ -13,6 +13,9 @@ from simulation_validation.model import default_frames_file, load_yaml, robot_de
 
 
 def start(context):
+    mode = LaunchConfiguration('mode').perform(context)
+    if mode not in ('init1', 'live'):
+        raise ValueError('mode는 init1 또는 live여야 합니다.')
     share = Path(get_package_share_directory('simulation_validation'))
     config = load_yaml(LaunchConfiguration('frames_file').perform(context))
     models = []
@@ -31,9 +34,12 @@ def start(context):
              name='robot_state_publisher', namespace='simulation_validation',
              parameters=[{'robot_description': ParameterValue(description, value_type=str)}],
              remappings=tf_remaps, output='screen'),
-        Node(package='simulation_validation', executable='init1_joint_states',
+        Node(package='simulation_validation',
+             executable='init1_joint_states' if mode == 'init1' else 'live_joint_states',
              namespace='simulation_validation',
-             parameters=[{'pose_file': LaunchConfiguration('pose_file')}], output='screen'),
+             parameters=[{'pose_file': LaunchConfiguration('pose_file')} if mode == 'init1'
+                         else {f'{side}_ip': LaunchConfiguration(f'{side}_ip')
+                               for side in ('left', 'right')}], output='screen'),
         Node(package='rviz2', executable='rviz2', namespace='simulation_validation',
              arguments=['-d', str(share / 'rviz/init1.rviz'), '-f', config['frames']['base']],
              remappings=tf_remaps, condition=IfCondition(LaunchConfiguration('rviz')),
@@ -47,6 +53,9 @@ def start(context):
 def generate_launch_description():
     share = Path(get_package_share_directory('simulation_validation'))
     return LaunchDescription([
+        DeclareLaunchArgument('mode', default_value='init1', choices=['init1', 'live']),
+        DeclareLaunchArgument('left_ip', default_value='192.168.2.31'),
+        DeclareLaunchArgument('right_ip', default_value='192.168.2.32'),
         DeclareLaunchArgument('frames_file', default_value=default_frames_file()),
         DeclareLaunchArgument('pose_file', default_value=str(share / 'config/init1.yaml')),
         DeclareLaunchArgument('rviz', default_value='true'),

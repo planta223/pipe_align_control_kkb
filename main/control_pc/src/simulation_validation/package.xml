@@ -2,7 +2,7 @@
 <package format="3">
   <name>simulation_validation</name>
   <version>0.1.0</version>
-  <description>Static init 1 visualization using the official xArm description.</description>
+  <description>Static and live joint visualization using the official xArm description.</description>
   <maintainer email="planta223@naver.com">planta223</maintainer>
   <license>Apache-2.0</license>
   <buildtool_depend>ament_python</buildtool_depend>

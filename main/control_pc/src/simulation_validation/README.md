@@ -1,7 +1,7 @@
-# 정적 좌표계 검증
+# 좌표계 검증
 
 공식 `xarm_description`의 양팔 xArm7 모델에 `init 1` 목표 관절각을 적용해 RViz에 표시한다.
-실제 로봇에 접속하거나 SDK·제어 노드를 실행하지 않는다. 실측 feedback 표시는 아직 없다.
+기본 `init1` 모드는 로봇에 접속하지 않는다. 선택 옵션 `live`는 공식 Python SDK로 실제 관절각만 조회한다.
 
 - 공통 토르소 기준, 양팔 base·flange·TCP 축을 표시한다. 토르소·손 형상은 포함하지 않는다.
 - `../../config/coordinate_frames.yaml`을 직접 읽으며 장착 변환과 TCP를 중복 저장하지 않는다.
@@ -62,6 +62,30 @@ RViz에서 실제 `init 1` 자세와 양팔 장착 방향·관절 배치·flange
 GUI 없이 관절각·TF만 확인하려면 같은 launch에 `rviz:=false`를 추가한다. 종료는 Ctrl+C다.
 공통 설정 경로는 자동으로 찾으며, 다른 파일을 확인할 때는 `frames_file:=/절대경로/coordinate_frames.yaml`을 지정한다.
 VS Code Snap의 GTK 경로는 RViz 프로세스에서만 제외하며 시스템 환경은 변경하지 않는다.
+
+## 실제 관절각 표시
+
+`live`는 각 팔의 관절각을 20 Hz로 조회해 같은 모델에 표시한다. 기존 `init1` 창은 Ctrl+C로 종료한 뒤 실행한다.
+한 launch 안에서는 선택한 관절각 발행기 하나만 실행된다.
+공식 `xarm-python-sdk`가 현재 ROS Python 환경에 설치되어 있어야 한다. 기본 정적 모드에는 SDK가 필요 없다.
+
+```bash
+cd ~/pipe_align_control_kkb
+source /opt/ros/humble/setup.bash
+source main/control_pc/_colcon/install/local_setup.bash
+ros2 launch simulation_validation init1.launch.py mode:=live
+```
+
+- 기본 주소는 왼팔 `192.168.2.31`, 오른팔 `192.168.2.32`다. `left_ip:=주소 right_ip:=주소`로 변경할 수 있다.
+- 공식 SDK의 `get_joint_states(is_radian=True, num=1)`로 각 팔 J1~J7을 읽는다. ROS의 EEF pose 토픽은 사용하지 않는다.
+- `/simulation_validation/joint_states` → `robot_state_publisher` → RViz로 연결한다. 장착 변환과 TCP는 기존 `coordinate_frames.yaml`을 사용한다.
+- 이동, 모터 활성화, 모드·상태·TCP 설정 변경은 하지 않는다. 별도 제어기로 실물을 움직이면 화면이 따라간다.
+- 팔별로 수신 여부를 터미널에 표시한다. 새 값이 1초 이상 없거나 조회에 실패하면 경고하고 마지막 자세를 유지한다. 연결 실패 시 2초 뒤 재시도한다.
+- 최초 수신 전에는 해당 팔의 관절각을 발행하지 않는다. 한쪽만 수신되면 그 팔부터 표시하며, `init1`이나 영점 관절각으로 대체하지 않는다.
+- 마지막 자세도 계속 표시하므로 `joint_states.header.stamp`는 화면 갱신 시각이다. 실제 수신 여부는 터미널 경고로 확인한다. 이 토픽은 시각화 전용이다.
+
+화면 일치는 관절각뿐 아니라 장착 변환·기구 모델의 정확도에 좌우된다. `live`에서 base 장착값이나 TCP offset을 자동 보정하지 않는다.
+`control_coordinate.yaml`의 보정 목표와 `preview` 재생은 아직 적용하지 않는다.
 
 ## 검사
 

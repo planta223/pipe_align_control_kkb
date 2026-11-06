@@ -201,3 +201,22 @@ ros2 topic echo /vision/right_pipe/pose --qos-reliability best_effort
 
 별도 `tracking_status` 토픽은 없다. 실제 손과 left/right Pipe 대응도 비전 PC의 초기 mask와 `--left-pipe-object-id` 설정으로 확인한다.
 이 단계는 PC 간 수신 확인이며, 자율 정렬 제어 연결은 포함하지 않는다.
+
+## 9. 실제 양팔 자세 시각화 — 선택 실행
+
+공식 모델과 `simulation_validation`을 [패키지 안내](../../main/control_pc/src/simulation_validation/README.md#빌드)에 따라 빌드한 뒤 새 터미널에서 실행한다.
+기존 정적 시각화가 실행 중이면 해당 창만 Ctrl+C로 종료한다.
+
+```bash
+cd ~/pipe_align_control_kkb
+source /opt/ros/humble/setup.bash
+source main/control_pc/_colcon/install/local_setup.bash
+export ROS_DOMAIN_ID=8
+export ROS_LOCALHOST_ONLY=0
+ros2 launch simulation_validation init1.launch.py mode:=live
+```
+
+왼팔 `192.168.2.31`, 오른팔 `192.168.2.32`에서 공식 SDK로 관절각만 읽어 RViz에 반영한다.
+로봇 이동·모터 활성화·모드 변경 명령은 보내지 않는다. 실물을 별도 제어기로 움직이면 화면이 따라간다.
+수신 중단 시 경고하며 마지막 자세를 유지하므로 터미널의 양팔 수신 상태를 함께 확인한다.
+주소는 `left_ip:=주소 right_ip:=주소`로 변경할 수 있다. 기본 정적 표시는 `mode:=live`를 빼고 실행한다.

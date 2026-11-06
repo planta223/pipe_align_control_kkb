@@ -16,9 +16,10 @@ setup(
     zip_safe=True,
     maintainer='planta223',
     maintainer_email='planta223@naver.com',
-    description='Static init 1 visualization using the official xArm description.',
+    description='Static and live joint visualization using the official xArm description.',
     license='Apache-2.0',
     entry_points={'console_scripts': [
         'init1_joint_states = simulation_validation.static_joint_states:main',
+        'live_joint_states = simulation_validation.live_joint_states:main',
     ]},
 )
