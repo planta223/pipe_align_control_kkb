@@ -1,6 +1,8 @@
 #include "xarm_motion/motion_core.hpp"
+#include "report_state.hpp"
 #include <gtest/gtest.h>
 #include <cmath>
+#include <future>
 
 namespace xm = xarm_motion;
 namespace {
@@ -77,7 +79,49 @@ TEST(Configuration, GateRejectsDisabledMissingAndNonBoolean) {
   }
   EXPECT_ANY_THROW(xm::require_standalone_enabled(YAML::Load("{}")));
   EXPECT_NO_THROW(xm::require_standalone_enabled(YAML::Load("execution: {standalone_enabled: true}")));
-  EXPECT_THROW(xm::require_standalone_enabled(YAML::LoadFile(config_dir+"control.yaml")),std::runtime_error);
+  auto disabled = YAML::LoadFile(config_dir+"control.yaml");
+  disabled["execution"]["standalone_enabled"] = false;
+  EXPECT_THROW(xm::require_standalone_enabled(disabled),std::runtime_error);
+}
+TEST(ReportState, WaitsForDecodedDataInsteadOfSocketConnection) {
+  xm::detail::ReportState state;
+  auto waiting = std::async(std::launch::async,[&] { state.wait_first(1,[]{return false;}); });
+  EXPECT_EQ(waiting.wait_for(std::chrono::milliseconds(30)),std::future_status::timeout);
+  xm::detail::RobotReport report;
+  report.axis = 7; report.simulation = 0; report.received_at = xm::steady_seconds();
+  report.tcp.translation() = Eigen::Vector3d(0,.116,.116);
+  state.publish(report);
+  ASSERT_EQ(waiting.wait_for(std::chrono::milliseconds(500)),std::future_status::ready);
+  EXPECT_NO_THROW(waiting.get());
+  const auto received = state.snapshot(xm::steady_seconds(),1);
+  EXPECT_EQ(received.axis,7);
+  EXPECT_NEAR(received.tcp.translation()[1],.116,1e-12);
+  EXPECT_NEAR(received.tcp.translation()[2],.116,1e-12);
+}
+TEST(ReportState, MissingStaleInvalidAndCancelledReportsBlock) {
+  xm::detail::ReportState state;
+  EXPECT_ANY_THROW(state.snapshot(xm::steady_seconds(),.1));
+  EXPECT_ANY_THROW(state.wait_first(.02,[]{return false;}));
+  EXPECT_ANY_THROW(state.wait_first(1,[]{return true;}));
+  xm::detail::RobotReport report;
+  report.received_at = xm::steady_seconds()-.2;
+  state.publish(report);
+  EXPECT_ANY_THROW(state.snapshot(xm::steady_seconds(),.1));
+  report.received_at = xm::steady_seconds(); report.error = "invalid report";
+  state.publish(report);
+  EXPECT_ANY_THROW(state.snapshot(xm::steady_seconds(),.1));
+}
+TEST(ReportState, FiveHzStatusDoesNotUseTheJointQueryDeadline) {
+  const auto limits = config().limits;
+  xm::detail::ReportState state;
+  xm::detail::RobotReport report;
+  const double now = xm::steady_seconds();
+  report.received_at = now-.19;
+  state.publish(report);
+  EXPECT_NO_THROW(state.snapshot(now,limits.report_timeout));
+  EXPECT_ANY_THROW(state.snapshot(now,limits.feedback_timeout));
+  EXPECT_ANY_THROW(state.snapshot(now+limits.report_timeout,limits.report_timeout));
+  EXPECT_DOUBLE_EQ(limits.feedback_timeout,.1);
 }
 TEST(Configuration, NumericLimitsAndAddressesAreValidated) {
   auto yaml = YAML::LoadFile(config_dir+"control.yaml");

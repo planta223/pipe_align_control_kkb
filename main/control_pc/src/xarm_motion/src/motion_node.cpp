@@ -128,7 +128,8 @@ int main(int argc, char** argv) {
       const int i = arm.side == "left" ? 0 : 1;
       backends.push_back(std::make_unique<xm::XArmBackend>(config.ips[i],arm.flange_T_tcp,
         config.limits.feedback_timeout,cancelled,
-        (std::filesystem::path(XARM_CONTROL_PC_DIR)/"_colcon/locks/xarm_motion").string()));
+        (std::filesystem::path(XARM_CONTROL_PC_DIR)/"_colcon/locks/xarm_motion").string(),
+        config.limits.report_timeout));
       arm.backend = backends.back().get();
     }
     xm::MotionSession session(std::move(arms),config.limits,cancelled);

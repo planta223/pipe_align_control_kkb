@@ -6,7 +6,8 @@ namespace xarm_motion {
 class XArmBackend final : public ArmBackend {
 public:
   XArmBackend(const std::string& ip, const Pose& flange_T_tcp,
-              double timeout, std::function<bool()> cancelled, const std::string& lock_dir);
+              double timeout, std::function<bool()> cancelled, const std::string& lock_dir,
+              double report_timeout);
   ~XArmBackend() override;
   Feedback read() override;
   void enable() override;

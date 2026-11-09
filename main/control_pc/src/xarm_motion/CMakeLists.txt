@@ -64,6 +64,7 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_motion test/test_motion.cpp)
   target_link_libraries(test_motion motion_core)
+  target_include_directories(test_motion PRIVATE src)
   target_compile_definitions(test_motion PRIVATE
     TEST_CONTROL_PC_DIR="${CONTROL_PC_DIR}"
     TEST_MODEL="${CMAKE_CURRENT_BINARY_DIR}/models/xarm7_false.urdf")

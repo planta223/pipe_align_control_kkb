@@ -67,12 +67,14 @@ Config read_config(const YAML::Node& yaml) {
     positive(p,"orientation_tracking_error_rad"), positive(p,"joint_speed_coefficient_rad_s"),
     positive(p,"joint_step_dt_cap_s"), positive(p,"joint_tracking_error_rad"),
     positive(p,"joint_acceleration_rad_s2"), positive(v,"feedback_timeout_s"),
+    positive(v,"rich_report_timeout_s"),
     positive(v,"start_position_tolerance_m"), positive(v,"start_orientation_tolerance_rad"),
     positive(v,"arrival_position_tolerance_m"), positive(v,"arrival_orientation_tolerance_rad"),
     positive(v,"arrival_joint_tolerance_rad"), positive(v,"stationary_joint_speed_rad_s"),
     positive(v,"arrival_hold_s"), positive(v,"arrival_timeout_s")};
   require(c.limits.rate >= 50 && c.limits.rate <= 200, "제어 주기는 50~200 Hz여야 합니다.");
   require(c.limits.feedback_timeout > c.limits.period(), "피드백 타임아웃은 제어 주기보다 커야 합니다.");
+  require(c.limits.report_timeout > c.limits.feedback_timeout, "rich 보고 타임아웃은 관절 조회 타임아웃보다 커야 합니다.");
   require(c.limits.arrival_timeout > c.limits.arrival_hold, "도착 타임아웃은 유지 시간보다 커야 합니다.");
   for (int i = 0; i < 2; ++i) {
     const auto r = yaml["robots"][i == 0 ? "left" : "right"];

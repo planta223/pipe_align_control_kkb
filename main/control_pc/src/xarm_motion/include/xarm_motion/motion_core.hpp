@@ -18,7 +18,7 @@ using Pose = Eigen::Isometry3d;
 struct Limits {
   double rate, linear_speed, angular_speed, position_error, orientation_error;
   double joint_speed, joint_dt_cap, joint_error, joint_acceleration;
-  double feedback_timeout, start_position, start_orientation;
+  double feedback_timeout, report_timeout, start_position, start_orientation;
   double arrival_position, arrival_orientation, arrival_joint, stationary_speed;
   double arrival_hold, arrival_timeout;
   double period() const { return 1.0 / rate; }
