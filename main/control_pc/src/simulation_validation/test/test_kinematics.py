@@ -7,9 +7,9 @@ import xml.etree.ElementTree as ET
 import PyKDL as kdl
 
 from simulation_validation.kinematics import (
-    ArmKinematics, SIDES, frame_from_matrix, interpolate, make_plan, named_pose,
+    ArmKinematics, SIDES, dynamic_pose_names, frame_from_matrix, interpolate, make_plan, named_pose,
 )
-from simulation_validation.model import default_frames_file, joint_positions, load_yaml, robot_description
+from simulation_validation.model import default_frames_file, joint_positions, load_yaml, origin, robot_description
 
 
 PACKAGE = Path(__file__).resolve().parents[1]
@@ -30,6 +30,22 @@ class KinematicsTests(unittest.TestCase):
         error = kdl.diff(actual, expected)
         self.assertLess(error.vel.Norm(), 1e-6)
         self.assertLess(error.rot.Norm(), 1e-6)
+
+    def test_dynamic_requires_both_endpoints_even_with_sequence(self):
+        for start, target in (('', ''), ('init1', ''), ('', 'goal'), (' ', 'goal')):
+            for sequence in ('', 'init1,goal'):
+                with self.subTest(start=start, target=target, sequence=sequence):
+                    with self.assertRaisesRegex(ValueError, 'start_pose와 target_pose'):
+                        dynamic_pose_names(start, target, sequence)
+        self.assertEqual(dynamic_pose_names('init1', 'goal'), ['init1', 'goal'])
+
+    def test_dynamic_sequence_matches_explicit_endpoints(self):
+        self.assertEqual(dynamic_pose_names('init1', 'init1', 'init1,goal,init1'),
+                         ['init1', 'goal', 'init1'])
+        for sequence in ('goal,init1', 'init1,other', 'init1,,goal', 'init1'):
+            with self.subTest(sequence=sequence):
+                with self.assertRaises(ValueError):
+                    dynamic_pose_names('init1', 'goal', sequence)
 
     def test_invalid_or_unknown_pose_is_rejected(self):
         identity = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
@@ -72,7 +88,7 @@ class KinematicsTests(unittest.TestCase):
                     self.assertFrameClose(arm.fk(values), expected)
 
     def test_saved_path_holds_flange_origins_and_finishes_facing_down(self):
-        poses = [named_pose(self.coordinates, name) for name in ('init1', 'init1_floor_parallel')]
+        poses = [named_pose(self.coordinates, name) for name in ('init1', 'init1_floor_parallel_v1')]
         plan = make_plan(self.arms, poses, self.seeds, 100)
         self.assertEqual(len(plan), 101)
         for step, values in enumerate(plan):
@@ -90,18 +106,46 @@ class KinematicsTests(unittest.TestCase):
                     normal = world_rotation * actual.M.UnitZ()
                     self.assertLess((normal - kdl.Vector(0, 0, -1)).Norm(), 1e-6)
 
+    def test_v2_path_matches_heights_preserves_left_xy_and_right_pose(self):
+        current = named_pose(self.coordinates, 'init1')
+        v1 = named_pose(self.coordinates, 'init1_floor_parallel_v1')
+        target = named_pose(self.coordinates, 'init1_floor_parallel_v2')
+        mounts = {}
+        for side in SIDES:
+            xyz, rpy = origin(self.config['fixed_transforms'][f'base_T_{side}_base'])
+            mounts[side] = kdl.Frame(kdl.Rotation.RPY(*rpy), kdl.Vector(*xyz))
+        self.assertFrameClose(target['right'], v1['right'])
+        self.assertLess(kdl.diff(kdl.Frame(v1['left'].M), kdl.Frame(target['left'].M)).rot.Norm(), 1e-9)
+        plan = make_plan(self.arms, [current, target], self.seeds, 100)
+        start = {side: mounts[side] * current[side] for side in SIDES}
+        for step, values in enumerate(plan):
+            for index, side in enumerate(SIDES):
+                q = values[index*7:index*7+7]
+                actual = self.arms[side].fk(q)
+                t = step / 100
+                t = t*t*(3 - 2*t)
+                self.assertFrameClose(actual, interpolate(current[side], target[side], t))
+                world = mounts[side] * actual
+                self.assertAlmostEqual(world.p[0], start[side].p[0], delta=1e-6)
+                self.assertAlmostEqual(world.p[1], start[side].p[1], delta=1e-6)
+                if side == 'right':
+                    self.assertAlmostEqual(world.p[2], start[side].p[2], delta=1e-6)
+                if step == 100:
+                    self.assertAlmostEqual(world.p[2], start['right'].p[2], delta=1e-6)
+                    self.assertLess((world.M.UnitZ() - kdl.Vector(0, 0, -1)).Norm(), 1e-6)
+
     def test_unreachable_goal_and_discontinuous_path_are_rejected(self):
         current = named_pose(self.coordinates, 'init1')
         impossible = kdl.Frame(current['left'].M, kdl.Vector(100, 100, 100))
         with self.assertRaisesRegex(ValueError, 'IK 실패'):
             self.arms['left'].solve(impossible, self.seeds['left'])
-        target = named_pose(self.coordinates, 'init1_floor_parallel')
+        target = named_pose(self.coordinates, 'init1_floor_parallel_v1')
         with self.assertRaisesRegex(ValueError, '인접 IK 결과'):
             make_plan(self.arms, [current, target], self.seeds, 1, max_joint_step=1e-9)
 
     def test_waypoint_sequence_can_return_to_start(self):
         current = named_pose(self.coordinates, 'init1')
-        target = named_pose(self.coordinates, 'init1_floor_parallel')
+        target = named_pose(self.coordinates, 'init1_floor_parallel_v1')
         plan = make_plan(self.arms, [current, target, current], self.seeds, 20)
         self.assertEqual(len(plan), 41)
         for index, side in enumerate(SIDES):

@@ -11,6 +11,7 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
 from simulation_validation.model import default_frames_file, load_yaml, robot_description
+from simulation_validation.kinematics import dynamic_pose_names
 
 
 MODES = ['static_rviz', 'dynamic_rviz', 'live_feedback', 'live_control']
@@ -22,6 +23,9 @@ def start(context):
         raise RuntimeError('live_control은 미구현 예약 옵션입니다. 실물에 접속하거나 명령을 보내지 않습니다.')
     if mode not in MODES:
         raise ValueError(f'mode는 {", ".join(MODES)} 중 하나여야 합니다.')
+    if mode == 'dynamic_rviz':
+        dynamic_pose_names(*(LaunchConfiguration(key).perform(context)
+                             for key in ('start_pose', 'target_pose', 'pose_sequence')))
     share = Path(get_package_share_directory('simulation_validation'))
     config = load_yaml(LaunchConfiguration('frames_file').perform(context))
     models = []
@@ -84,8 +88,8 @@ def generate_launch_description():
         DeclareLaunchArgument('show_environment', default_value='true'),
         DeclareLaunchArgument('seed_file', default_value=str(share / 'config/init1.yaml')),
         DeclareLaunchArgument('pose_name', default_value='init1'),
-        DeclareLaunchArgument('start_pose', default_value='init1'),
-        DeclareLaunchArgument('target_pose', default_value='init1_floor_parallel'),
+        DeclareLaunchArgument('start_pose', default_value='', description='dynamic_rviz 필수: 시작 자세 이름'),
+        DeclareLaunchArgument('target_pose', default_value='', description='dynamic_rviz 필수: 목표 자세 이름'),
         DeclareLaunchArgument('pose_sequence', default_value=''),
         DeclareLaunchArgument('duration', default_value='5.0'),
         DeclareLaunchArgument('rviz', default_value='true'),

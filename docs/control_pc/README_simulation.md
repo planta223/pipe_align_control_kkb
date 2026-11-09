@@ -74,12 +74,13 @@ RViz에서 양팔 장착 방향·관절 배치·flange·TCP 축을 비교한다.
 
 ```bash
 ros2 launch simulation_validation init1.launch.py mode:=static_rviz \
-  pose_name:=init1_floor_parallel
+  pose_name:=init1_floor_parallel_v1
 ```
 
 ## 3. 터미널 1 — 화면에서 이동 재생
 
-실물에 접속하지 않고 `init1`에서 `init1_floor_parallel`까지의 경로를 계산한다.
+실물에 접속하지 않고 `init1`에서 `init1_floor_parallel_v1`까지의 경로를 계산한다.
+`start_pose`와 `target_pose`는 필수이며, 생략하면 실행 전에 오류로 종료한다.
 시작 자세를 2초 표시한 뒤 5초 동안 한 번 재생하고 마지막 자세를 유지한다.
 
 ```bash
@@ -89,21 +90,23 @@ source main/control_pc/_colcon/install/local_setup.bash
 export ROS_DOMAIN_ID=8
 export ROS_LOCALHOST_ONLY=0
 ros2 launch simulation_validation init1.launch.py mode:=dynamic_rviz \
-  start_pose:=init1 target_pose:=init1_floor_parallel duration:=5.0
+  start_pose:=init1 target_pose:=init1_floor_parallel_v1 duration:=5.0
 ```
 
 - flange 위치는 선형 보간하고 회전은 최단 회전으로 보간한다. 구간 시작·끝은 완만하게 재생한다.
 - 이 두 자세는 flange 위치가 같으므로 화면에서 flange 중심을 유지하며 회전한다.
+- 왼팔 높이도 오른팔에 맞추려면 `target_pose:=init1_floor_parallel_v2`로 선택한다. 왼팔 world X·Y와 오른팔 목표 자세는 유지한다.
 - 목표 flange 축은 `Goal flange axes`에 반투명 빨강/초록/파랑 화살표로 표시한다.
 - 전체 경로를 먼저 계산한다. IK 실패·관절 제한 위반·인접 단계의 관절 변화가 15°를 넘으면 재생 없이 오류로 종료한다.
 - 다시 재생하려면 Ctrl+C 후 같은 명령으로 실행한다. 실제 충돌이나 동역학을 검증하는 기능은 없다.
 
-여러 자세를 연속 재생하려면 `pose_sequence`에 이름을 순서대로 넣는다. `duration`은 구간별 시간이다.
+여러 자세를 연속 재생하려면 `pose_sequence`에 이름을 순서대로 넣는다. 시점·종점도 명시해야 하며 목록의 양 끝과 같아야 한다. `duration`은 구간별 시간이다.
 다음 예시는 보정 목표에 도달한 뒤 처음 자세로 돌아온다.
 
 ```bash
 ros2 launch simulation_validation init1.launch.py mode:=dynamic_rviz \
-  pose_sequence:=init1,init1_floor_parallel,init1 duration:=5.0
+  start_pose:=init1 target_pose:=init1 \
+  pose_sequence:=init1,init1_floor_parallel_v1,init1 duration:=5.0
 ```
 
 ## 4. 터미널 1 — 실제 양팔 자세 표시
@@ -199,7 +202,7 @@ world +X를 전방, +Y를 왼쪽, +Z를 위쪽으로 사용한다. 책상 원점
 - 로컬 IK 초기 추정 관절각은 `seed_file:=/절대경로/init1.yaml`로 지정한다. 정적·동적 모드에서 사용한다.
 - 공통 장착 변환과 TCP는 [fixed_frames.yaml](../../main/control_pc/config/fixed_frames.yaml)을 읽는다.
 - 자세 행렬은 [arm_poses.yaml](../../main/control_pc/config/arm_poses.yaml)의 `poses` 아래에서 이름으로 선택한다. 각 자세는 `left/right.base_T_flange` 4×4 행렬이며, 각 팔 base 기준·위치 m 단위다.
-- 현재 `init1`은 저장 당시 실측 자세, `init1_floor_parallel`은 flange 위치를 유지하면서 world -Z 방향을 보도록 계산한 목표다. world +Z가 수직이라는 가정을 사용했다.
+- `init1`은 저장 당시 실측 자세다. `init1_floor_parallel_v1`은 양팔 flange 위치를 유지하며 world -Z 방향을 보도록 계산한 목표이고, `init1_floor_parallel_v2`는 v1에서 왼팔 높이를 오른팔에 맞춘 목표다. world +Z가 수직이라는 가정을 사용했다.
 - [init1.yaml](../../main/control_pc/src/simulation_validation/config/init1.yaml)의 관절각은 로컬 IK의 초기 추정값이다. 화면 자세 자체는 선택한 행렬로 결정한다. YAML 변경 후에는 시각화를 재시작한다.
 - 토르소·손 형상과 미확인 카메라 장착 변환은 표시하지 않는다. 개체별 기구학 보정은 적용하지 않는다.
 

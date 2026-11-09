@@ -32,6 +32,20 @@ def named_pose(config, name):
     return {side: frame_from_matrix(value[side]['base_T_flange']) for side in SIDES}
 
 
+def dynamic_pose_names(start, target, sequence=''):
+    start, target, sequence = start.strip(), target.strip(), sequence.strip()
+    if not start or not target:
+        raise ValueError('dynamic_rviz에는 start_pose와 target_pose를 모두 명시해야 합니다.')
+    if not sequence:
+        return [start, target]
+    names = [value.strip() for value in sequence.split(',')]
+    if len(names) < 2 or any(not value for value in names):
+        raise ValueError('pose_sequence에 자세 이름 2개 이상이 필요합니다.')
+    if names[0] != start or names[-1] != target:
+        raise ValueError('pose_sequence의 처음·마지막 이름은 start_pose·target_pose와 같아야 합니다.')
+    return names
+
+
 def interpolate(start, target, fraction):
     if not 0 <= fraction <= 1:
         raise ValueError('보간 비율은 0~1이어야 합니다.')

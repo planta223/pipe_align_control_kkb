@@ -9,7 +9,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from visualization_msgs.msg import Marker, MarkerArray
 
-from .kinematics import ArmKinematics, SIDES, make_plan, named_pose
+from .kinematics import ArmKinematics, SIDES, dynamic_pose_names, make_plan, named_pose
 from .model import joint_positions, load_yaml
 
 
@@ -32,14 +32,10 @@ class RvizJointStates(Node):
         if mode == 'static_rviz':
             selected = [self.declare_parameter('pose_name', 'init1').value]
         else:
-            sequence = self.declare_parameter('pose_sequence', '').value
-            if sequence:
-                selected = [value.strip() for value in sequence.split(',')]
-                if len(selected) < 2 or any(not value for value in selected):
-                    raise ValueError('pose_sequence에 쉼표로 구분한 자세 이름 2개 이상이 필요합니다.')
-            else:
-                selected = [self.declare_parameter('start_pose', 'init1').value,
-                            self.declare_parameter('target_pose', 'init1_floor_parallel').value]
+            selected = dynamic_pose_names(
+                self.declare_parameter('start_pose', '').value,
+                self.declare_parameter('target_pose', '').value,
+                self.declare_parameter('pose_sequence', '').value)
         duration = self.declare_parameter('duration', 5.0).value
         if not math.isfinite(duration) or duration <= 0:
             raise ValueError('duration은 양수 초 단위여야 합니다.')

@@ -14,7 +14,7 @@
 
 - 공통 토르소 기준, 양팔 base·flange·TCP 축을 표시한다. 토르소·손 형상은 포함하지 않는다.
 - `../../config/fixed_frames.yaml`을 직접 읽으며 장착 변환과 TCP를 중복 저장하지 않는다.
-- `../../config/arm_poses.yaml`의 `poses`에서 `init1`, `init1_floor_parallel` 등의 양팔 base 기준 flange 행렬을 선택한다. 위치는 m이다.
+- `../../config/arm_poses.yaml`의 `poses`에서 `init1`, `init1_floor_parallel_v1`, `init1_floor_parallel_v2`의 양팔 base 기준 flange 행렬을 선택한다. 위치는 m이다.
 - `config/init1.yaml`은 외부 SET1 관절각을 기록한 로컬 IK 초기 추정값이다. degree를 rad로 변환해 사용한다.
 - 공식 URDF의 회전축·관절 원점·관절 제한으로 KDL 체인을 구성한다. 정적·동적 모드는 SDK나 로봇 접속 없이 계산한다.
 - 카메라는 토르소 고정이다. 현재 장착 변환이 미확인이므로 표시하지 않는다. `camera_mount.parent_T_camera`에 `translation_m`과 `rpy_rad` 또는 `rotation_matrix`를 채우면 축을 표시한다.
@@ -78,14 +78,16 @@ VS Code Snap의 GTK 경로는 RViz 프로세스에서만 제외하며 시스템 
 
 ```bash
 ros2 launch simulation_validation init1.launch.py mode:=dynamic_rviz \
-  start_pose:=init1 target_pose:=init1_floor_parallel duration:=5.0
+  start_pose:=init1 target_pose:=init1_floor_parallel_v1 duration:=5.0
 ```
 
 시작 자세를 2초 유지한 뒤 구간당 `duration`초 동안 한 번 재생하고 최종 자세를 유지한다.
+`start_pose`와 `target_pose`는 필수이며 생략하면 실행 전에 오류로 종료한다.
 위치·회전을 보간하고 직전 관절각을 기준으로 IK를 계산한다. 전체 경로의 IK·관절 제한·인접 관절 변화 15° 제한을 통과해야 재생한다.
 IK 실패 시 launch를 종료한다. 실제 충돌이나 동역학을 검사하는 기능은 없다.
-`Goal flange axes`는 최종 목표 축이며, `pose_name:=init1_floor_parallel`을 정적 모드에 지정하면 목표만 표시한다.
-여러 자세를 재생하려면 `pose_sequence:=init1,init1_floor_parallel,init1`을 사용한다.
+`Goal flange axes`는 최종 목표 축이며, `pose_name:=init1_floor_parallel_v1`을 정적 모드에 지정하면 목표만 표시한다.
+v1은 flange 위치를 유지한 방향 보정이고, v2는 왼팔 world X·Y와 오른팔 목표 자세를 유지하며 왼팔 높이를 오른팔에 맞춘 목표다. 원하는 버전을 `target_pose`로 선택한다.
+여러 자세를 재생하려면 `start_pose:=init1 target_pose:=init1 pose_sequence:=init1,init1_floor_parallel_v1,init1`을 사용한다. 목록의 양 끝은 명시한 시점·종점과 같아야 한다.
 자세 파일은 `coordinates_file`, 초기 추정 관절각은 `seed_file`로 변경할 수 있다.
 
 ## 실제 관절각 표시
