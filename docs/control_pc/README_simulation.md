@@ -54,7 +54,7 @@ colcon --log-base main/control_pc/_colcon/log build \
 
 ## 2. 터미널 1 — 정적 자세 표시
 
-빌드를 마친 뒤 실행한다. 로봇 접속 없이 `control_coordinate.yaml`의 `init1` flange 행렬을 로컬 IK로 풀어 표시한다.
+빌드를 마친 뒤 실행한다. 로봇 접속 없이 `arm_poses.yaml`의 `init1` flange 행렬을 로컬 IK로 풀어 표시한다.
 실물의 현재 자세와는 독립적이며, 실제 로봇을 초기 자세로 이동시키지 않는다.
 
 ```bash
@@ -169,11 +169,11 @@ cd ~/project/xarm_sdk/install/xarm_sdk/lib/xarm_sdk
 
 - GUI 없이 토픽·TF만 확인하려면 launch에 `rviz:=false`를 추가한다.
 - 1300 계열 장착면 모델을 선택하려면 `model1300_left:=true model1300_right:=true`를 추가한다.
-- 다른 좌표계 설정은 `frames_file:=/절대경로/coordinate_frames.yaml`로 지정한다.
-- 자세 목록은 `coordinates_file:=/절대경로/control_coordinate.yaml`로 변경한다.
+- 다른 좌표계 설정은 `frames_file:=/절대경로/fixed_frames.yaml`로 지정한다.
+- 자세 목록은 `coordinates_file:=/절대경로/arm_poses.yaml`로 변경한다.
 - 로컬 IK 초기 추정 관절각은 `seed_file:=/절대경로/init1.yaml`로 지정한다. 정적·동적 모드에서 사용한다.
-- 공통 장착 변환과 TCP는 [coordinate_frames.yaml](../../main/control_pc/config/coordinate_frames.yaml)을 읽는다.
-- 자세 행렬은 [control_coordinate.yaml](../../main/control_pc/config/control_coordinate.yaml)의 `poses` 아래에서 이름으로 선택한다. 각 자세는 `left/right.base_T_flange` 4×4 행렬이며, 각 팔 base 기준·위치 m 단위다.
+- 공통 장착 변환과 TCP는 [fixed_frames.yaml](../../main/control_pc/config/fixed_frames.yaml)을 읽는다.
+- 자세 행렬은 [arm_poses.yaml](../../main/control_pc/config/arm_poses.yaml)의 `poses` 아래에서 이름으로 선택한다. 각 자세는 `left/right.base_T_flange` 4×4 행렬이며, 각 팔 base 기준·위치 m 단위다.
 - 현재 `init1`은 저장 당시 실측 자세, `init1_floor_parallel`은 flange 위치를 유지하면서 world -Z 방향을 보도록 계산한 목표다. world +Z가 수직이라는 가정을 사용했다.
 - [init1.yaml](../../main/control_pc/src/simulation_validation/config/init1.yaml)의 관절각은 로컬 IK의 초기 추정값이다. 화면 자세 자체는 선택한 행렬로 결정한다. YAML 변경 후에는 시각화를 재시작한다.
 - 토르소·손 형상과 미확인 카메라 장착 변환은 표시하지 않는다. 개체별 기구학 보정은 적용하지 않는다.

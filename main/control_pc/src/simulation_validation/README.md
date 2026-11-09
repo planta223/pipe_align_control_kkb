@@ -13,8 +13,8 @@
 전체 명령 모음은 [제어 PC 시각화](../../../../docs/control_pc/README_simulation.md)를 따른다.
 
 - 공통 토르소 기준, 양팔 base·flange·TCP 축을 표시한다. 토르소·손 형상은 포함하지 않는다.
-- `../../config/coordinate_frames.yaml`을 직접 읽으며 장착 변환과 TCP를 중복 저장하지 않는다.
-- `../../config/control_coordinate.yaml`의 `poses`에서 `init1`, `init1_floor_parallel` 등의 양팔 base 기준 flange 행렬을 선택한다. 위치는 m이다.
+- `../../config/fixed_frames.yaml`을 직접 읽으며 장착 변환과 TCP를 중복 저장하지 않는다.
+- `../../config/arm_poses.yaml`의 `poses`에서 `init1`, `init1_floor_parallel` 등의 양팔 base 기준 flange 행렬을 선택한다. 위치는 m이다.
 - `config/init1.yaml`은 외부 SET1 관절각을 기록한 로컬 IK 초기 추정값이다. degree를 rad로 변환해 사용한다.
 - 공식 URDF의 회전축·관절 원점·관절 제한으로 KDL 체인을 구성한다. 정적·동적 모드는 SDK나 로봇 접속 없이 계산한다.
 - 카메라는 토르소 고정이다. 현재 장착 변환이 미확인이므로 표시하지 않는다. `camera_mount.parent_T_camera`에 `translation_m`과 `rpy_rad` 또는 `rotation_matrix`를 채우면 축을 표시한다.
@@ -71,7 +71,7 @@ RViz에서 실제 `init 1` 자세와 양팔 장착 방향·관절 배치·flange
 1300 계열 도구 장착면 모델이 필요한 경우 해당 팔에 `model1300_left:=true` 또는 `model1300_right:=true`를 추가한다.
 
 GUI 없이 관절각·TF만 확인하려면 같은 launch에 `rviz:=false`를 추가한다. 종료는 Ctrl+C다.
-공통 설정 경로는 자동으로 찾으며, 다른 파일을 확인할 때는 `frames_file:=/절대경로/coordinate_frames.yaml`을 지정한다.
+공통 설정 경로는 자동으로 찾으며, 다른 파일을 확인할 때는 `frames_file:=/절대경로/fixed_frames.yaml`을 지정한다.
 VS Code Snap의 GTK 경로는 RViz 프로세스에서만 제외하며 시스템 환경은 변경하지 않는다.
 
 ## 화면에서 이동 재생
@@ -103,7 +103,7 @@ ros2 launch simulation_validation init1.launch.py mode:=live_feedback
 
 - 기본 주소는 왼팔 `192.168.2.31`, 오른팔 `192.168.2.32`다. `left_ip:=주소 right_ip:=주소`로 변경할 수 있다.
 - 공식 SDK의 `get_joint_states(is_radian=True, num=1)`로 각 팔 J1~J7을 읽는다. ROS의 EEF pose 토픽은 사용하지 않는다.
-- `/simulation_validation/joint_states` → `robot_state_publisher` → RViz로 연결한다. 장착 변환과 TCP는 기존 `coordinate_frames.yaml`을 사용한다.
+- `/simulation_validation/joint_states` → `robot_state_publisher` → RViz로 연결한다. 장착 변환과 TCP는 기존 `fixed_frames.yaml`을 사용한다.
 - 이동, 모터 활성화, 모드·상태·TCP 설정 변경은 하지 않는다. 별도 제어기로 실물을 움직이면 화면이 따라간다.
 - 팔별로 수신 여부를 터미널에 표시한다. 새 값이 1초 이상 없거나 조회에 실패하면 경고하고 마지막 자세를 유지한다. 연결 실패 시 2초 뒤 재시도한다.
 - 최초 수신 전에는 해당 팔의 관절각을 발행하지 않는다. 한쪽만 수신되면 그 팔부터 표시하며, `init1`이나 영점 관절각으로 대체하지 않는다.

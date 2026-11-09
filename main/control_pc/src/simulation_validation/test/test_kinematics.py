@@ -19,7 +19,7 @@ class KinematicsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.config = load_yaml(default_frames_file())
-        cls.coordinates = load_yaml(Path(default_frames_file()).with_name('control_coordinate.yaml'))
+        cls.coordinates = load_yaml(Path(default_frames_file()).with_name('arm_poses.yaml'))
         cls.description = robot_description(cls.config)
         cls.arms = {side: ArmKinematics(cls.description, cls.config['frames'][f'{side}_base'],
                                         cls.config['frames'][f'{side}_flange']) for side in SIDES}

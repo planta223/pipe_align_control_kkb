@@ -72,7 +72,7 @@ def generate_launch_description():
         DeclareLaunchArgument('right_ip', default_value='192.168.2.32'),
         DeclareLaunchArgument('frames_file', default_value=default_frames_file()),
         DeclareLaunchArgument('coordinates_file', default_value=str(
-            Path(default_frames_file()).with_name('control_coordinate.yaml'))),
+            Path(default_frames_file()).with_name('arm_poses.yaml'))),
         DeclareLaunchArgument('seed_file', default_value=str(share / 'config/init1.yaml')),
         DeclareLaunchArgument('pose_name', default_value='init1'),
         DeclareLaunchArgument('start_pose', default_value='init1'),

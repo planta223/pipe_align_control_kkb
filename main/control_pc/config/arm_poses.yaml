@@ -2,7 +2,7 @@
 # init1은 2026-11-05T18:02:51+09:00 SDK 실측값이다.
 # init1_floor_parallel은 world +Z를 수직으로 가정한 보정 목표다.
 # flange 위치를 유지하며 +Z를 world -Z로 맞춘 값이며 실물에는 적용하지 않았다.
-# TCP는 coordinate_frames.yaml의 flange → TCP 변환으로 계산한다.
+# TCP는 fixed_frames.yaml의 flange → TCP 변환으로 계산한다.
 
 poses:
   init1:

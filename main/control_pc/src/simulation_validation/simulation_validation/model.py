@@ -17,10 +17,10 @@ ET.register_namespace('xacro', XACRO)
 def default_frames_file():
     share = Path(get_package_share_directory('simulation_validation'))
     for parent in share.parents:
-        candidate = parent / 'config/coordinate_frames.yaml'
+        candidate = parent / 'config/fixed_frames.yaml'
         if candidate.is_file():
             return str(candidate)
-    raise FileNotFoundError('coordinate_frames.yaml 위치를 frames_file 인자로 지정하세요.')
+    raise FileNotFoundError('fixed_frames.yaml 위치를 frames_file 인자로 지정하세요.')
 
 
 def load_yaml(path):
