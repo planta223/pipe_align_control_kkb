@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>xarm_motion</name>
+  <version>0.1.0</version>
+  <description>Bounded dual xArm motion with an explicit standalone execution gate.</description>
+  <maintainer email="planta223@naver.com">planta223</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>ament_index_cpp</depend>
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>eigen</depend>
+  <depend>yaml-cpp</depend>
+  <depend>orocos_kdl</depend>
+  <depend>kdl_parser</depend>
+  <depend>urdf</depend>
+  <depend>xarm_sdk</depend>
+  <build_depend>xacro</build_depend>
+  <build_depend>xarm_description</build_depend>
+  <test_depend>ament_cmake_gtest</test_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

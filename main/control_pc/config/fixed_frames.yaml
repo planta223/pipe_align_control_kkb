@@ -1,4 +1,4 @@
-# 시각화 패키지가 읽는 좌표계 설정이며 실제 제어에는 적용하지 않는다.
+# 고정 좌표계 설정이다. xarm_motion은 flange → TCP만 읽는다.
 # 위치는 m, 각도는 rad이며 RPY는 Rz(yaw) * Ry(pitch) * Rx(roll)이다.
 # parent_T_child는 child 좌표를 parent 좌표로 변환한다.
 

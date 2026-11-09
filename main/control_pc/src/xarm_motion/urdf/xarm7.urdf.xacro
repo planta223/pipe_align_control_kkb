@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<robot name="xarm_motion_arm" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:arg name="model1300" default="false"/>
+  <xacro:include filename="$(find xarm_description)/urdf/xarm_device_macro.xacro"/>
+  <link name="robot_base"/>
+  <xacro:xarm_device prefix="" dof="7" robot_type="xarm" attach_to="robot_base"
+    create_attach_link="false" load_gazebo_plugin="false" model1300="$(arg model1300)"/>
+</robot>
