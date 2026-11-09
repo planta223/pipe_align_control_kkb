@@ -2,11 +2,14 @@
 
 import ast
 import copy
+from contextlib import redirect_stdout
+import io
 import json
 import os
 from pathlib import Path
 import pty
 import queue
+import re
 import select
 import shutil
 import signal
@@ -116,7 +119,7 @@ class SelectorTests(unittest.TestCase):
         pedal._toggle_task_routed_hands()
         self.assertEqual(pedal._hand_pinch_active, {'left': False, 'right': False})
 
-    def test_keyboard_loop_publishes_only_selection_and_ignores_b(self):
+    def run_keyboard(self, chunks, config=None):
         pedal = self.legacy_callbacks()
         events = queue.Queue()
         events.put(('ready', None))
@@ -131,10 +134,56 @@ class SelectorTests(unittest.TestCase):
         fake_msgs = SimpleNamespace(Int32=lambda **kwargs: SimpleNamespace(**kwargs))
         with patch.dict(sys.modules, {'rclpy': fake_rclpy, 'std_msgs.msg': fake_msgs}), \
                 patch.object(s.select, 'select', return_value=([9], [], [])), \
-                patch.object(s.os, 'read', side_effect=[b'r', b'l', b' ', b'b', b'B', b' ', b'']):
-            s.control_loop(Mock(), publisher, child, 9, self.config, Mock())
-        self.assertEqual([c.args[0].data for c in publisher.publish.call_args_list], [2, 1, 0])
+                patch.object(s.os, 'read', side_effect=chunks):
+            s.control_loop(Mock(), publisher, child, 9, config or self.config, Mock())
         pedal._publish_pose_to_hand.assert_not_called()
+        return [c.args[0].data for c in publisher.publish.call_args_list]
+
+    def test_keyboard_loop_publishes_only_selection_and_ignores_b(self):
+        tasks = self.run_keyboard([b'R', b'l', b' ', b'b', b'B', b' ', b''])
+        self.assertEqual(tasks, [self.config[m + '_task'] for m in ('right', 'left', 'both')])
+
+    def test_split_korean_utf8_and_invalid_bytes_do_not_exit_selector(self):
+        chunks = [b'\xff'] + [bytes([value]) for value in 'ㄱㅣ '.encode('utf-8')] + [b'']
+        tasks = self.run_keyboard(chunks)
+        self.assertEqual(tasks, [self.config[m + '_task'] for m in ('right', 'left', 'both')])
+
+    def test_yaml_keys_replace_previous_bindings(self):
+        config = copy.deepcopy(self.config)
+        config['keys']['left'] = ['a', 'ㅣ']
+        tasks = self.run_keyboard([b'l', b'a', b'r', b''], config)
+        self.assertEqual(tasks, [config[m + '_task'] for m in ('left', 'right')])
+
+    def test_invalid_key_settings_are_rejected(self):
+        for value in (None, {}, {'left': [], 'right': ['r'], 'both': [' ']},
+                      {'left': ['l'], 'right': ['L'], 'both': [' ']},
+                      {'left': ['ll'], 'right': ['r'], 'both': [' ']},
+                      {'left': ['\n'], 'right': ['r'], 'both': [' ']}):
+            with self.subTest(value=value):
+                config = dict(self.config, keys=value)
+                path = self.temp_path / 'invalid_keys.yaml'
+                path.write_text(yaml.safe_dump(config))
+                with self.assertRaises(ValueError):
+                    s.load_config(path)
+
+    def test_key_help_uses_yaml_and_selected_labels_stay_red_after_warning(self):
+        config = copy.deepcopy(self.config)
+        config['keys']['left'] = ['a', 'ㅣ']
+        output = io.StringIO()
+        with redirect_stdout(output):
+            display = s.Display(config)
+            for label in ('왼손', '양손', '오른손'):
+                display.status('선택: ' + label)
+            display.warning('[WARN]: test warning')
+        text = output.getvalue()
+        self.assertIn('a/ㅣ:왼손', text)
+        self.assertIn('r/ㄱ:오른손', text)
+        self.assertIn('Space:양손', text)
+        for label in ('왼손', '양손', '오른손'):
+            self.assertIn('선택: \033[31m' + label + '\033[0m', text)
+        self.assertEqual(text.count('선택: \033[31m오른손\033[0m'), 2)
+        self.assertNotIn('실물 확인 필요', text)
+        self.assertNotIn('\033[31m', s.Display.colored('변경 대기: 왼손'))
 
     def test_duplicate_pedal_detection_reads_only_process_metadata(self):
         root = self.temp_path / 'proc'
@@ -269,6 +318,8 @@ raise SystemExit(selector.main(['--config', {str(config_path)!r}]))
             if not records.exists():
                 return []
             return [json.loads(line) for line in records.read_text().splitlines() if line.endswith('}')]
+        def displayed():
+            return re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', output.decode(errors='replace'))
         def wait_for(predicate):
             end = time.monotonic() + 12
             while time.monotonic() < end:
@@ -280,17 +331,23 @@ raise SystemExit(selector.main(['--config', {str(config_path)!r}]))
                 time.sleep(0.02)
             self.fail(output.decode(errors='replace'))
         try:
-            wait_for(lambda: '선택: 양손' in output.decode(errors='replace'))
+            wait_for(lambda: '선택: 양손' in displayed())
             self.assertFalse(events()[0]['tty'])
             self.assertFalse(events()[0]['stdin_tty'])
-            for key, task in ((b'r', 2), (b'l', 1), (b' ', 0)):
-                os.write(master, key)
+            sequence = [(b'r', 'right'), (b'l', 'left'), (b' ', 'both'),
+                        ('ㄱ'.encode('utf-8'), 'right'), ('ㅣ'.encode('utf-8'), 'left'), (b' ', 'both')]
+            for key, mode in sequence:
+                task = config[mode + '_task']
+                for byte in key:
+                    os.write(master, bytes([byte]))
+                    time.sleep(0.02)
                 wait_for(lambda: events()[-1].get('task') == task)
-                wait_for(lambda: ('선택: ' + config[{2: 'right', 1: 'left', 0: 'both'}[task] + '_label'])
-                         in output.decode(errors='replace'))
+                wait_for(lambda: ('선택: ' + config[mode + '_label']) in displayed())
             os.write(master, b'bB')
             time.sleep(0.2)
-            self.assertEqual([e['task'] for e in events() if 'task' in e], [2, 1, 0])
+            self.assertEqual([e['task'] for e in events() if 'task' in e],
+                             [config[mode + '_task'] for _, mode in sequence])
+            self.assertIn('선택: \033[31m양손\033[0m', output.decode(errors='replace'))
             os.write(master, b'\x03')
             process.wait(timeout=6)
             drain()

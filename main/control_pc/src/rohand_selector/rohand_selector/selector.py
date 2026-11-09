@@ -1,6 +1,7 @@
 """Own one existing pedal process; keyboard keys only publish its task selection."""
 
 import argparse
+import codecs
 from contextlib import contextmanager
 from datetime import datetime
 import fcntl
@@ -18,8 +19,27 @@ import time
 import tty
 
 
-KEY_MODES = {'l': 'left', 'r': 'right', ' ': 'both'}
 ACK = re.compile(r'Received task_num=(\d+) from ')
+
+
+def key_modes(config):
+    keys = config.get('keys')
+    if not isinstance(keys, dict) or set(keys) != {'left', 'right', 'both'}:
+        raise ValueError('keys에 left/right/both 키 목록이 필요합니다.')
+    modes = {}
+    for mode, aliases in keys.items():
+        if not isinstance(aliases, list) or not aliases:
+            raise ValueError(f'keys.{mode}는 비어 있지 않은 목록이어야 합니다.')
+        for alias in aliases:
+            if not isinstance(alias, str) or len(alias) != 1 or not alias.isprintable():
+                raise ValueError(f'keys.{mode}: 키는 출력 가능한 한 문자여야 합니다.')
+            alias = alias.lower()
+            if len(alias) != 1:
+                raise ValueError(f'keys.{mode}: 소문자 변환 후 한 문자여야 합니다.')
+            if alias in modes and modes[alias] != mode:
+                raise ValueError(f'선택 간 키가 중복됩니다: {alias!r}')
+            modes[alias] = mode
+    return modes
 
 
 def load_config(path):
@@ -37,6 +57,7 @@ def load_config(path):
     if not re.fullmatch(r'/[A-Za-z_][A-Za-z_0-9]*(/[A-Za-z_][A-Za-z_0-9]*)*',
                         config.get('selection_topic', '')):
         raise ValueError('selection_topic은 절대 ROS topic 이름이어야 합니다.')
+    key_modes(config)
     return config
 
 
@@ -165,21 +186,31 @@ def keyboard():
 
 
 class Display:
-    def __init__(self):
+    def __init__(self, config):
         self.text = ''
-        print('l:left r:right Space:both ^C:exit', flush=True)
+        help_parts = []
+        for mode in ('left', 'right', 'both'):
+            keys = '/'.join('Space' if key == ' ' else key for key in config['keys'][mode])
+            help_parts.append(f'{keys}:{config[mode + "_label"]}')
+        print('  '.join(help_parts) + '  Ctrl+C:종료', flush=True)
+
+    @staticmethod
+    def colored(text):
+        if text.startswith('선택: '):
+            return '선택: \033[31m' + text[len('선택: '):] + '\033[0m'
+        return text
 
     def status(self, text):
         if text != self.text:
             self.text = text
-            print('\r\033[2K' + text, end='', flush=True)
+            print('\r\033[2K' + self.colored(text), end='', flush=True)
 
     def warning(self, text):
         text = text.split(']: ', 1)[-1]
         if len(text) > 72:
             text = text[:69] + '...'
         print('\r\033[2K경고: ' + text, flush=True)
-        print(self.text, end='', flush=True)
+        print(self.colored(self.text), end='', flush=True)
 
 
 def control_loop(node, publisher, child, fd, config, ui):
@@ -187,6 +218,8 @@ def control_loop(node, publisher, child, fd, config, ui):
     from std_msgs.msg import Int32
 
     desired = 'both'
+    keys = key_modes(config)
+    decoder = codecs.getincrementaldecoder('utf-8')(errors='ignore')
     applied = requested = config['both_task']
     ready = False
     started = changed_at = time.monotonic()
@@ -208,10 +241,12 @@ def control_loop(node, publisher, child, fd, config, ui):
                 ui.warning(value)
         readable, _, _ = select.select([fd], [], [], 0.05)
         if readable:
-            char = os.read(fd, 1).decode(errors='ignore').lower()
-            if not char:
+            data = os.read(fd, 64)
+            if not data:
                 break
-            desired = KEY_MODES.get(char, desired)  # b and all other keys are ignored.
+            # 나누어 수신된 UTF-8도 완성된 문자부터 처리한다.
+            for char in decoder.decode(data).lower():
+                desired = keys.get(char, desired)
         target = config[desired + '_task']
         if ready and publisher.get_subscription_count() and target != requested:
             publisher.publish(Int32(data=target))
@@ -231,7 +266,7 @@ def control_loop(node, publisher, child, fd, config, ui):
 def main(args=None):
     from ament_index_python.packages import get_package_prefix, get_package_share_directory
 
-    parser = argparse.ArgumentParser(description='ROHand l/r/Space keyboard selector')
+    parser = argparse.ArgumentParser(description='ROHand keyboard selector')
     parser.add_argument('--config', default=str(
         Path(get_package_share_directory('rohand_selector')) / 'config/selector.yaml'))
     options = parser.parse_args(args)
@@ -277,7 +312,7 @@ def main(args=None):
         with keyboard() as fd:
             print(f'로그: {run_dir / "pedal.log"}', flush=True)
             child = PedalProcess(pedal_command(executable, config, routes), run_dir / 'pedal.log')
-            control_loop(node, publisher, child, fd, config, Display())
+            control_loop(node, publisher, child, fd, config, Display(config))
     except KeyboardInterrupt:
         pass
     except Exception as exc:
