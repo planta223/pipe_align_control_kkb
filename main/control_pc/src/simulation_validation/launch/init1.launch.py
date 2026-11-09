@@ -30,7 +30,13 @@ def start(context):
         if value not in ('true', 'false'):
             raise ValueError(f'model1300_{side}는 true 또는 false여야 합니다.')
         models.append(value == 'true')
-    description = robot_description(config, *models)
+    show_environment = LaunchConfiguration('show_environment').perform(context).lower()
+    if show_environment not in ('true', 'false'):
+        raise ValueError('show_environment는 true 또는 false여야 합니다.')
+    environment = None
+    if show_environment == 'true':
+        environment = load_yaml(LaunchConfiguration('environment_file').perform(context))
+    description = robot_description(config, *models, environment=environment)
     tf_remaps = [('/tf', 'tf'), ('/tf_static', 'tf_static')]
     # VS Code Snap의 GTK 경로가 시스템 RViz 라이브러리와 충돌하지 않게 한다.
     rviz_env = {key: '' for key in ('GTK_PATH', 'GTK_EXE_PREFIX', 'GIO_MODULE_DIR')
@@ -73,6 +79,9 @@ def generate_launch_description():
         DeclareLaunchArgument('frames_file', default_value=default_frames_file()),
         DeclareLaunchArgument('coordinates_file', default_value=str(
             Path(default_frames_file()).with_name('arm_poses.yaml'))),
+        DeclareLaunchArgument('environment_file', default_value=str(
+            Path(default_frames_file()).with_name('environment_models.yaml'))),
+        DeclareLaunchArgument('show_environment', default_value='true'),
         DeclareLaunchArgument('seed_file', default_value=str(share / 'config/init1.yaml')),
         DeclareLaunchArgument('pose_name', default_value='init1'),
         DeclareLaunchArgument('start_pose', default_value='init1'),

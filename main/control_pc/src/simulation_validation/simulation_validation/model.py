@@ -79,7 +79,7 @@ def joint_positions(pose):
     return names, positions
 
 
-def robot_description(config, model1300_left=False, model1300_right=False):
+def robot_description(config, model1300_left=False, model1300_right=False, environment=None):
     frames = config['frames']
     required = {'base', 'camera', 'left_base', 'left_flange', 'left_tcp',
                 'right_base', 'right_flange', 'right_tcp'}
@@ -116,6 +116,9 @@ def robot_description(config, model1300_left=False, model1300_right=False):
             raise ValueError('camera_mount.parent_frame에 알려진 장착 좌표계를 지정하세요.')
         ET.SubElement(root, 'link', name=frames['camera'])
         add_fixed_joint(root, 'camera_mount', parent, frames['camera'], camera['parent_T_camera'])
+    if environment is not None:
+        from .environment import add_environment
+        add_environment(root, config, environment)
     doc = xacro.parse(ET.tostring(root, encoding='unicode'))
     xacro.process_doc(doc)
     expanded = ET.fromstring(doc.toxml())

@@ -165,6 +165,31 @@ cd ~/project/xarm_sdk/install/xarm_sdk/lib/xarm_sdk
 양팔의 `Successfully moved to initial pose.` 출력을 확인한다.
 시각화만 실행할 때는 이 과정이 필요 없다.
 
+## 책상·블라인드·오른쪽 벽
+
+구현된 세 모드에서 [environment_models.yaml](../../main/control_pc/config/environment_models.yaml)을 기본 표시한다.
+값을 변경한 뒤 시각화를 재시작하면 반영되며 재빌드는 필요 없다.
+
+| 설정 | 의미 |
+|---|---|
+| `frame_id`, `floor_z_m` | 환경 기준 좌표계와 바닥의 Z 좌표. 기본 `world`, -1.06801 m |
+| `table.size_m` | 앞뒤 깊이·좌우 폭·두께. 기본 76 × 152 × 4 cm |
+| `table.position_m`, `table.rpy_rad` | 가까운 모서리 윗면 중앙의 world 위치·회전 |
+| `blind.gap_from_table_m` | 책상 먼 모서리와 블라인드 앞면 사이 간격. 기본 3 cm |
+| `blind.width_m`, `height_m` | 기본 폭 152 cm, 바닥부터 높이 2 m |
+| `right_wall.gap_from_table_m` | 책상 오른쪽 모서리와 벽 안쪽 면 사이 간격. 기본 10 cm |
+| `right_wall.length_m`, `height_m` | 기본 앞뒤 길이 76 cm, 바닥부터 높이 2 m |
+| 각 벽의 `offset_m`, `rpy_rad` | 책상 방향 기준 추가 이동, 기본 벽 방향 기준 추가 회전 |
+| 각 모델의 `rgba`, `enabled` | 색상·투명도, 표시 여부 |
+
+world +X를 전방, +Y를 왼쪽, +Z를 위쪽으로 사용한다. 책상 원점은 가까운 모서리 윗면 중앙이다.
+두 벽은 책상의 수평 배치를 따라가며 아래쪽 끝은 `floor_z_m`에 둔다. 오른쪽 벽은 기본적으로 블라인드와 직각이고 책상 앞뒤 끝에 맞춘다. 두께 1 cm는 표시용 값이다.
+환경 배치는 로봇 장착값이나 저장 자세를 참조하지 않는다.
+기존 RViz 격자는 world Z=0의 좌표 참고선이며 실제 바닥을 뜻하지 않는다. 환경은 로봇 움직임과 관계없이 고정되며 충돌 검사는 하지 않는다.
+
+환경 전체를 숨기려면 실행 명령에 `show_environment:=false`를 추가한다.
+다른 환경 파일은 `environment_file:=/절대경로/environment_models.yaml`로 지정한다.
+
 ## 표시 옵션과 설정
 
 - GUI 없이 토픽·TF만 확인하려면 launch에 `rviz:=false`를 추가한다.

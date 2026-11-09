@@ -111,6 +111,16 @@ ros2 launch simulation_validation init1.launch.py mode:=live_feedback
 
 화면 일치는 관절각뿐 아니라 장착 변환·기구 모델의 정확도에 좌우된다. `live_feedback`에서 base 장착값이나 TCP offset을 자동 보정하지 않는다.
 
+## 환경 모델
+
+`../../config/environment_models.yaml`의 책상·블라인드·오른쪽 벽을 세 구현 모드에서 기본 표시한다.
+책상 가까운 모서리 윗면 중앙은 `table.position_m`·`rpy_rad`, 바닥은 `floor_z_m`으로 world 기준에서 직접 지정한다.
+world +X는 전방, +Y는 왼쪽, +Z는 위쪽이다. 환경 배치는 로봇 장착값이나 저장 자세를 참조하지 않는다.
+블라인드는 먼 모서리에서 3 cm 떨어진 폭 152 cm의 판이고, 오른쪽 벽은 옆 모서리에서 안쪽 면까지 10 cm 간격인 길이 76 cm의 판이다.
+두 벽은 바닥부터 높이 2 m이며 책상의 수평 배치를 따라간다. 로봇 장착·목표 자세는 변경하지 않는다.
+YAML에서 크기·간격·추가 이동·회전·색상·표시 여부를 변경한 뒤 재시작하면 적용된다. 재빌드는 필요 없다.
+`show_environment:=false`로 전체를 숨기고 `environment_file`로 다른 파일을 선택한다. 표시용 모델이며 충돌 검사는 하지 않는다.
+
 ## 검사
 
 빌드 환경을 불러온 상태에서 실행한다. 로봇은 사용하지 않는다.
