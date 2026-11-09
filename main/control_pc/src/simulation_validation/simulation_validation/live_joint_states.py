@@ -11,11 +11,11 @@ from sensor_msgs.msg import JointState
 
 
 def sdk_factory():
-    # 정적 모드는 SDK 설치가 필요 없다.
+    # 화면 전용 모드는 SDK 설치가 필요 없다.
     try:
         from xarm.wrapper import XArmAPI
     except ImportError as exc:
-        raise RuntimeError('live 모드에는 xarm-python-sdk가 필요합니다.') from exc
+        raise RuntimeError('live_feedback 모드에는 xarm-python-sdk가 필요합니다.') from exc
     return XArmAPI
 
 

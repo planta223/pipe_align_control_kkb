@@ -1,11 +1,22 @@
 # 좌표계 검증
 
-공식 `xarm_description`의 양팔 xArm7 모델에 `init 1` 목표 관절각을 적용해 RViz에 표시한다.
-기본 `init1` 모드는 로봇에 접속하지 않는다. 선택 옵션 `live`는 공식 Python SDK로 실제 관절각만 조회한다.
+공식 `xarm_description` 모델과 PyKDL로 저장된 flange 자세를 표시하거나, 실제 관절 피드백을 표시한다.
+
+| 모드 | 동작 | 실물 연결 | 이동 명령 |
+|---|---|---|---|
+| `static_rviz` (기본) | 선택한 자세 행렬을 정적으로 표시 | 없음 | 없음 |
+| `dynamic_rviz` | 선택한 자세 사이의 경로를 화면에서 재생 | 없음 | 없음 |
+| `live_feedback` | 실제 관절각으로 화면 갱신 | 필요 | 없음 |
+| `live_control` | 실제 피드백과 제어 명령 전송 예정 | 미구현 | 미구현 |
+
+`live_control`은 선택 시 안내 오류 후 종료하며 접속·명령 전송을 하지 않는다.
+전체 명령 모음은 [제어 PC 시각화](../../../../docs/control_pc/README_simulation.md)를 따른다.
 
 - 공통 토르소 기준, 양팔 base·flange·TCP 축을 표시한다. 토르소·손 형상은 포함하지 않는다.
 - `../../config/coordinate_frames.yaml`을 직접 읽으며 장착 변환과 TCP를 중복 저장하지 않는다.
-- `config/init1.yaml`은 외부 `~/project/xarm_sdk/example/init.cc`의 SET1을 기록한 목표 관절각이다. degree를 rad로 변환해 사용한다.
+- `../../config/control_coordinate.yaml`의 `poses`에서 `init1`, `init1_floor_parallel` 등의 양팔 base 기준 flange 행렬을 선택한다. 위치는 m이다.
+- `config/init1.yaml`은 외부 SET1 관절각을 기록한 로컬 IK 초기 추정값이다. degree를 rad로 변환해 사용한다.
+- 공식 URDF의 회전축·관절 원점·관절 제한으로 KDL 체인을 구성한다. 정적·동적 모드는 SDK나 로봇 접속 없이 계산한다.
 - 카메라는 토르소 고정이다. 현재 장착 변환이 미확인이므로 표시하지 않는다. `camera_mount.parent_T_camera`에 `translation_m`과 `rpy_rad` 또는 `rotation_matrix`를 채우면 축을 표시한다.
 - 모든 발행·구독 토픽은 `/simulation_validation/` 아래에 둔다. 기존 제어 토픽과 TF에 연결하지 않는다.
 
@@ -50,12 +61,12 @@ colcon --log-base main/control_pc/_colcon/log build \
 cd ~/pipe_align_control_kkb
 source /opt/ros/humble/setup.bash
 source main/control_pc/_colcon/install/local_setup.bash
-ros2 launch simulation_validation init1.launch.py
+ros2 launch simulation_validation init1.launch.py mode:=static_rviz pose_name:=init1
 ```
 
 RViz에서 실제 `init 1` 자세와 양팔 장착 방향·관절 배치·flange·TCP 축을 비교한다. 좌표축의 X/Y/Z는 빨강/초록/파랑이다.
 전체 관절 좌표계와 카메라 축은 `All link frames (optional)` 표시를 켜서 확인할 수 있다.
-기존 `T_sr`와 TCP offset의 실측 정확도, 실제 관절각과 SET1 목표값의 일치는 별도 확인이 필요하다.
+기존 `T_sr`와 TCP offset의 실측 정확도, 실측값과 모델의 차이는 별도 확인이 필요하다. 행렬을 IK로 표시한 초기 관절각은 SET1과 최대 약 2.1° 다를 수 있다.
 표준 xArm7 기본 기구학을 사용하며 개체별 보정은 아직 적용하지 않는다.
 1300 계열 도구 장착면 모델이 필요한 경우 해당 팔에 `model1300_left:=true` 또는 `model1300_right:=true`를 추가한다.
 
@@ -63,17 +74,31 @@ GUI 없이 관절각·TF만 확인하려면 같은 launch에 `rviz:=false`를 �
 공통 설정 경로는 자동으로 찾으며, 다른 파일을 확인할 때는 `frames_file:=/절대경로/coordinate_frames.yaml`을 지정한다.
 VS Code Snap의 GTK 경로는 RViz 프로세스에서만 제외하며 시스템 환경은 변경하지 않는다.
 
+## 화면에서 이동 재생
+
+```bash
+ros2 launch simulation_validation init1.launch.py mode:=dynamic_rviz \
+  start_pose:=init1 target_pose:=init1_floor_parallel duration:=5.0
+```
+
+시작 자세를 2초 유지한 뒤 구간당 `duration`초 동안 한 번 재생하고 최종 자세를 유지한다.
+위치·회전을 보간하고 직전 관절각을 기준으로 IK를 계산한다. 전체 경로의 IK·관절 제한·인접 관절 변화 15° 제한을 통과해야 재생한다.
+IK 실패 시 launch를 종료한다. 실제 충돌이나 동역학을 검사하는 기능은 없다.
+`Goal flange axes`는 최종 목표 축이며, `pose_name:=init1_floor_parallel`을 정적 모드에 지정하면 목표만 표시한다.
+여러 자세를 재생하려면 `pose_sequence:=init1,init1_floor_parallel,init1`을 사용한다.
+자세 파일은 `coordinates_file`, 초기 추정 관절각은 `seed_file`로 변경할 수 있다.
+
 ## 실제 관절각 표시
 
-`live`는 각 팔의 관절각을 20 Hz로 조회해 같은 모델에 표시한다. 기존 `init1` 창은 Ctrl+C로 종료한 뒤 실행한다.
+`live_feedback`는 각 팔의 관절각을 20 Hz로 조회해 같은 모델에 표시한다. 기존 정적·동적 시각화 창은 Ctrl+C로 종료한 뒤 실행한다.
 한 launch 안에서는 선택한 관절각 발행기 하나만 실행된다.
-공식 `xarm-python-sdk`가 현재 ROS Python 환경에 설치되어 있어야 한다. 기본 정적 모드에는 SDK가 필요 없다.
+공식 `xarm-python-sdk`가 현재 ROS Python 환경에 설치되어 있어야 한다. 정적·동적 모드에는 SDK가 필요 없다.
 
 ```bash
 cd ~/pipe_align_control_kkb
 source /opt/ros/humble/setup.bash
 source main/control_pc/_colcon/install/local_setup.bash
-ros2 launch simulation_validation init1.launch.py mode:=live
+ros2 launch simulation_validation init1.launch.py mode:=live_feedback
 ```
 
 - 기본 주소는 왼팔 `192.168.2.31`, 오른팔 `192.168.2.32`다. `left_ip:=주소 right_ip:=주소`로 변경할 수 있다.
@@ -84,8 +109,8 @@ ros2 launch simulation_validation init1.launch.py mode:=live
 - 최초 수신 전에는 해당 팔의 관절각을 발행하지 않는다. 한쪽만 수신되면 그 팔부터 표시하며, `init1`이나 영점 관절각으로 대체하지 않는다.
 - 마지막 자세도 계속 표시하므로 `joint_states.header.stamp`는 화면 갱신 시각이다. 실제 수신 여부는 터미널 경고로 확인한다. 이 토픽은 시각화 전용이다.
 
-화면 일치는 관절각뿐 아니라 장착 변환·기구 모델의 정확도에 좌우된다. `live`에서 base 장착값이나 TCP offset을 자동 보정하지 않는다.
-`control_coordinate.yaml`의 보정 목표와 `preview` 재생은 아직 적용하지 않는다.
+화면 일치는 관절각뿐 아니라 장착 변환·기구 모델의 정확도에 좌우된다. `live_feedback`에서 base 장착값이나 TCP offset을 자동 보정하지 않는다.
+기존 `mode:=init1` / `mode:=live` 대신 `mode:=static_rviz` / `mode:=live_feedback`을 사용한다.
 
 ## 검사
 

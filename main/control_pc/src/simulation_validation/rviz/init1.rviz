@@ -15,7 +15,7 @@ Visualization Manager:
       Alpha: 0.35
       Color: 130; 130; 130
     - Class: rviz_default_plugins/RobotModel
-      Name: Dual xArm - init 1 target
+      Name: Dual xArm
       Enabled: true
       Visual Enabled: true
       Collision Enabled: false
@@ -25,6 +25,15 @@ Visualization Manager:
         Value: /simulation_validation/robot_description
         Reliability Policy: Reliable
         Durability Policy: Transient Local
+        History Policy: Keep Last
+        Depth: 1
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Goal flange axes
+      Enabled: true
+      Marker Topic:
+        Value: /simulation_validation/goal_axes
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
         History Policy: Keep Last
         Depth: 1
     - Class: rviz_default_plugins/TF

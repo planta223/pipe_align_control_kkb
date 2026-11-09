@@ -16,10 +16,10 @@ setup(
     zip_safe=True,
     maintainer='planta223',
     maintainer_email='planta223@naver.com',
-    description='Static and live joint visualization using the official xArm description.',
+    description='Local pose playback and live feedback using the official xArm description.',
     license='Apache-2.0',
     entry_points={'console_scripts': [
-        'init1_joint_states = simulation_validation.static_joint_states:main',
+        'rviz_joint_states = simulation_validation.rviz_joint_states:main',
         'live_joint_states = simulation_validation.live_joint_states:main',
     ]},
 )

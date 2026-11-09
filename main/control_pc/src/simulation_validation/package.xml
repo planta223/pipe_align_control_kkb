@@ -2,7 +2,7 @@
 <package format="3">
   <name>simulation_validation</name>
   <version>0.1.0</version>
-  <description>Static and live joint visualization using the official xArm description.</description>
+  <description>Local pose playback and live feedback using the official xArm description.</description>
   <maintainer email="planta223@naver.com">planta223</maintainer>
   <license>Apache-2.0</license>
   <buildtool_depend>ament_python</buildtool_depend>
@@ -11,6 +11,8 @@
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>rclpy</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>visualization_msgs</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
   <exec_depend>python3-pykdl</exec_depend>
   <exec_depend>xacro</exec_depend>

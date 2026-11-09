@@ -213,10 +213,12 @@ source /opt/ros/humble/setup.bash
 source main/control_pc/_colcon/install/local_setup.bash
 export ROS_DOMAIN_ID=8
 export ROS_LOCALHOST_ONLY=0
-ros2 launch simulation_validation init1.launch.py mode:=live
+ros2 launch simulation_validation init1.launch.py mode:=live_feedback
 ```
 
 왼팔 `192.168.2.31`, 오른팔 `192.168.2.32`에서 공식 SDK로 관절각만 읽어 RViz에 반영한다.
 로봇 이동·모터 활성화·모드 변경 명령은 보내지 않는다. 실물을 별도 제어기로 움직이면 화면이 따라간다.
 수신 중단 시 경고하며 마지막 자세를 유지하므로 터미널의 양팔 수신 상태를 함께 확인한다.
-주소는 `left_ip:=주소 right_ip:=주소`로 변경할 수 있다. 기본 정적 표시는 `mode:=live`를 빼고 실행한다.
+주소는 `left_ip:=주소 right_ip:=주소`로 변경할 수 있다. 기본 정적 표시는 `mode:=live_feedback`를 빼고 실행한다.
+
+정적·동적 시각화와 자세 선택 명령은 [시각화 안내](../control_pc/README_simulation.md)를 따른다.
