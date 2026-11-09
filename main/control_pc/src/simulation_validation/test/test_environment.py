@@ -10,19 +10,22 @@ from simulation_validation.environment import placement
 from simulation_validation.model import default_frames_file, load_yaml, robot_description
 
 
+PACKAGE = Path(__file__).resolve().parents[1]
+
+
 class EnvironmentTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         directory = Path(default_frames_file()).parent
         cls.config = load_yaml(directory / 'fixed_frames.yaml')
-        cls.environment = load_yaml(directory / 'environment_models.yaml')
+        cls.environment = load_yaml(PACKAGE / 'config/environment_models.yaml')
 
     def scene(self, environment):
         return ET.fromstring(robot_description(self.config, environment=environment))
 
-    def test_world_placement_preserves_table_and_blind_and_adds_right_wall(self):
+    def test_world_placement_sets_table_and_blind_and_right_wall(self):
         table, relative_blind, relative_right = placement(self.environment)
-        self.assertLess((table.p - kdl.Vector(0.1233, 0, -0.36786954783562276)).Norm(), 1e-9)
+        self.assertLess((table.p - kdl.Vector(*self.environment['table']['position_m'])).Norm(), 1e-9)
         self.assertLess((table.M.UnitZ() - kdl.Vector(0, 0, 1)).Norm(), 1e-9)
         blind = table * relative_blind
         self.assertAlmostEqual(blind.p[0] - (table.p[0] + 0.76), 0.03)
@@ -58,8 +61,11 @@ class EnvironmentTests(unittest.TestCase):
 
     def test_yaml_changes_move_resize_and_rotate_models(self):
         environment = copy.deepcopy(self.environment)
+        original_position = environment['table']['position_m']
         environment['table'].update(size_m=[1.0, 1.8, 0.06],
-                                    position_m=[0.3233, -0.2, -0.397869547836],
+                                    position_m=[original_position[0] + 0.2,
+                                                original_position[1] - 0.2,
+                                                original_position[2] - 0.03],
                                     rpy_rad=[0, 0, math.pi/2])
         environment['blind'].update(gap_from_table_m=0.05, width_m=1.8, height_m=2.2,
                                     rgba=[0.2, 0.3, 0.4, 0.5])

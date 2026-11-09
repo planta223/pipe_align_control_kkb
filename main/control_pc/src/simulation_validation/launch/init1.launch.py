@@ -80,7 +80,7 @@ def generate_launch_description():
         DeclareLaunchArgument('coordinates_file', default_value=str(
             Path(default_frames_file()).with_name('arm_poses.yaml'))),
         DeclareLaunchArgument('environment_file', default_value=str(
-            Path(default_frames_file()).with_name('environment_models.yaml'))),
+            share / 'config/environment_models.yaml')),
         DeclareLaunchArgument('show_environment', default_value='true'),
         DeclareLaunchArgument('seed_file', default_value=str(share / 'config/init1.yaml')),
         DeclareLaunchArgument('pose_name', default_value='init1'),

@@ -167,7 +167,7 @@ cd ~/project/xarm_sdk/install/xarm_sdk/lib/xarm_sdk
 
 ## 책상·블라인드·오른쪽 벽
 
-구현된 세 모드에서 [environment_models.yaml](../../main/control_pc/config/environment_models.yaml)을 기본 표시한다.
+구현된 세 모드에서 [environment_models.yaml](../../main/control_pc/src/simulation_validation/config/environment_models.yaml)을 기본 표시한다.
 값을 변경한 뒤 시각화를 재시작하면 반영되며 재빌드는 필요 없다.
 
 | 설정 | 의미 |

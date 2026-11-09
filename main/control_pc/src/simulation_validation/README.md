@@ -113,7 +113,7 @@ ros2 launch simulation_validation init1.launch.py mode:=live_feedback
 
 ## 환경 모델
 
-`../../config/environment_models.yaml`의 책상·블라인드·오른쪽 벽을 세 구현 모드에서 기본 표시한다.
+[config/environment_models.yaml](config/environment_models.yaml)의 책상·블라인드·오른쪽 벽을 세 구현 모드에서 기본 표시한다.
 책상 가까운 모서리 윗면 중앙은 `table.position_m`·`rpy_rad`, 바닥은 `floor_z_m`으로 world 기준에서 직접 지정한다.
 world +X는 전방, +Y는 왼쪽, +Z는 위쪽이다. 환경 배치는 로봇 장착값이나 저장 자세를 참조하지 않는다.
 블라인드는 먼 모서리에서 3 cm 떨어진 폭 152 cm의 판이고, 오른쪽 벽은 옆 모서리에서 안쪽 면까지 10 cm 간격인 길이 76 cm의 판이다.
