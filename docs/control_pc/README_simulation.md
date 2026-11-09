@@ -13,8 +13,7 @@
 | `live_feedback` | 실제 양팔 관절 피드백을 화면에 반영 | 필요 | 없음 | 구현 |
 | `live_control` | 실제 피드백 표시와 제어 명령 전송 | 필요 예정 | 있음 예정 | 미구현 예약 |
 
-`live_control`을 선택하면 안내 오류와 함께 종료하며 실물에 접속하지 않는다.
-기존 `mode:=init1`은 `mode:=static_rviz`로, `mode:=live`는 `mode:=live_feedback`으로 변경했다.
+`live_control`을 선택하면 안내 오류와 함께 종료하며 실물에 접속하지 않는다. (아직 미구현)
 
 ## 실행 환경
 

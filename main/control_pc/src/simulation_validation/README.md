@@ -110,7 +110,6 @@ ros2 launch simulation_validation init1.launch.py mode:=live_feedback
 - 마지막 자세도 계속 표시하므로 `joint_states.header.stamp`는 화면 갱신 시각이다. 실제 수신 여부는 터미널 경고로 확인한다. 이 토픽은 시각화 전용이다.
 
 화면 일치는 관절각뿐 아니라 장착 변환·기구 모델의 정확도에 좌우된다. `live_feedback`에서 base 장착값이나 TCP offset을 자동 보정하지 않는다.
-기존 `mode:=init1` / `mode:=live` 대신 `mode:=static_rviz` / `mode:=live_feedback`을 사용한다.
 
 ## 검사
 
