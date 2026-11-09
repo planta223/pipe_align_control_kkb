@@ -1,7 +1,7 @@
 # Task 2 moved the physical right hand in the user's test.
 # Task 1 is the opposite logical hand; its physical side still needs confirmation.
-left_task: 1
-right_task: 2
+left_task: 2
+right_task: 1
 both_task: 0
 left_label: "왼손(실물 확인 필요)"
 right_label: "오른손"
