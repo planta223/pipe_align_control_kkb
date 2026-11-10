@@ -19,6 +19,8 @@ class KinematicsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.config = load_yaml(default_frames_file())
+        # 저장된 v1·v2 목표는 보존된 legacy 장착값에서 생성됐다.
+        cls.legacy_config = load_yaml(Path(default_frames_file()).parent / 'legacy/fixed_frames.yaml')
         cls.coordinates = load_yaml(Path(default_frames_file()).with_name('arm_poses.yaml'))
         cls.description = robot_description(cls.config)
         cls.arms = {side: ArmKinematics(cls.description, cls.config['frames'][f'{side}_base'],
@@ -87,7 +89,7 @@ class KinematicsTests(unittest.TestCase):
                         expected = expected * frame
                     self.assertFrameClose(arm.fk(values), expected)
 
-    def test_saved_path_holds_flange_origins_and_finishes_facing_down(self):
+    def test_legacy_saved_path_holds_flange_origins_and_finishes_facing_down(self):
         poses = [named_pose(self.coordinates, name) for name in ('init1', 'init1_floor_parallel_v1')]
         plan = make_plan(self.arms, poses, self.seeds, 100)
         self.assertEqual(len(plan), 101)
@@ -101,18 +103,18 @@ class KinematicsTests(unittest.TestCase):
                 self.assertFrameClose(actual, interpolate(poses[0][side], poses[1][side], t))
                 self.assertLess((actual.p - poses[0][side].p).Norm(), 1e-6)
                 if step == 100:
-                    mount = self.config['fixed_transforms'][f'base_T_{side}_base']
+                    mount = self.legacy_config['fixed_transforms'][f'base_T_{side}_base']
                     world_rotation = kdl.Rotation(*sum(mount['rotation_matrix'], []))
                     normal = world_rotation * actual.M.UnitZ()
                     self.assertLess((normal - kdl.Vector(0, 0, -1)).Norm(), 1e-6)
 
-    def test_v2_path_matches_heights_preserves_left_xy_and_right_pose(self):
+    def test_legacy_v2_path_matches_heights_preserves_left_xy_and_right_pose(self):
         current = named_pose(self.coordinates, 'init1')
         v1 = named_pose(self.coordinates, 'init1_floor_parallel_v1')
         target = named_pose(self.coordinates, 'init1_floor_parallel_v2')
         mounts = {}
         for side in SIDES:
-            xyz, rpy = origin(self.config['fixed_transforms'][f'base_T_{side}_base'])
+            xyz, rpy = origin(self.legacy_config['fixed_transforms'][f'base_T_{side}_base'])
             mounts[side] = kdl.Frame(kdl.Rotation.RPY(*rpy), kdl.Vector(*xyz))
         self.assertFrameClose(target['right'], v1['right'])
         self.assertLess(kdl.diff(kdl.Frame(v1['left'].M), kdl.Frame(target['left'].M)).rot.Norm(), 1e-9)

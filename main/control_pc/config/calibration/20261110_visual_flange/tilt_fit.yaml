@@ -1,0 +1,105 @@
+# 육안 flange 수직 기준 최소 회전 보정 결과. 실제 수직 정확도는 미검증이다.
+created_at: '2026-11-10T16:31:19.795+09:00'
+method: equal_weight_mean_axis_then_minimum_rotation_from_legacy
+formula: g=normalize(sum(z_i)); a=R_legacy*g; C=I+[a×d]_x+[a×d]_x^2/(1+a·d); R_new=C*R_legacy;
+  d=[0,0,-1]
+reference: visual_flange_z_down
+alignment_verified: false
+position_calibrated: false
+heading_calibrated: false
+notes: 육안 수직 자세 3개의 반복성만 사용했다. 2번 자세는 사용자 보고상 방향·높이 일치가 불확실하다. 실제 수직의 공통 판단 오차는 검증하지
+  않았다.
+legacy_file: legacy/fixed_frames.yaml
+legacy_frames_sha256: c88157f662915fe5bbb6ec557905fe6061706a025fbbf2dac74a5bf09a7d839c
+sources:
+- file: calibration/20261110_visual_flange/sample_01.yaml
+  sha256: dec5040ecd18d93f67fbaeffe49b18b9d7c2b0f4cc7457e321b98cf16c8831e8
+- file: calibration/20261110_visual_flange/sample_02.yaml
+  sha256: 0c5860de191cb99a5720621a648a70e6c9bd208e5aa52a16c5cc5b298fbcc072
+- file: calibration/20261110_visual_flange/sample_03.yaml
+  sha256: 250dfe7e5c21c259e1b08998b61c4be703ffbd269a17f77cdd3991644e8f669c
+arms:
+  left:
+    mean_flange_z_in_base:
+    - -0.7876834655921099
+    - 0.5632504246364097
+    - 0.2496071256589192
+    minimum_correction_angle_deg: 15.936244668352318
+    correction_in_world_rotation_matrix:
+    - - 0.9768687705114769
+      - 0.018813025959493086
+      - -0.2130105050311908
+    - - 0.018813025959493086
+      - 0.9846990430868291
+      - 0.17324509978100555
+    - - 0.2130105050311908
+      - -0.17324509978100555
+      - 0.961567813598306
+    legacy_rotation_matrix:
+    - - 0.7640235367
+      - 0.6313264797
+      - 0.1330222216
+    - - -0.0301536896
+      - -0.1710100717
+      - 0.984807753
+    - - 0.6444833515
+      - -0.7564274132
+      - -0.111618897
+    new_rotation_matrix:
+    - - 0.608501726606
+      - 0.774632890403
+      - 0.172248465508
+    - - 0.096334867873
+      - -0.287563635187
+      - 0.952904375564
+    - - 0.787683465574
+      - -0.563250424641
+      - -0.249607125575
+    sample_residual_deg:
+    - 0.7408037851060983
+    - 0.3111667903398717
+    - 0.8680293742321292
+    maximum_pairwise_axis_difference_deg: 1.5835697129126316
+  right:
+    mean_flange_z_in_base:
+    - -0.667596768981145
+    - -0.7008787413201291
+    - 0.2511643764777308
+    minimum_correction_angle_deg: 8.715251785390894
+    correction_in_world_rotation_matrix:
+    - - 0.999412956765276
+      - -0.002536458915168382
+      - -0.03416589272740138
+    - - -0.002536458915168382
+      - 0.9890406303185462
+      - -0.14762180718059414
+    - - 0.03416589272740138
+      - 0.14762180718059414
+      - 0.9884535870838221
+    legacy_rotation_matrix:
+    - - 0.7640235367
+      - -0.6313264797
+      - 0.1330222216
+    - - 0.0301536896
+      - -0.1710100717
+      - -0.984807753
+    - - 0.6444833515
+      - 0.7564274132
+      - -0.111618897
+    new_rotation_matrix:
+    - - 0.741479189205
+      - -0.656366121596
+      - 0.139255615471
+    - - -0.067254487189
+      - -0.279199757165
+      - -0.957874902879
+    - - 0.667596768954
+      - 0.700878741334
+      - -0.251164376396
+    sample_residual_deg:
+    - 0.5766132128094265
+    - 0.3596798758054879
+    - 0.8145266420011374
+    maximum_pairwise_axis_difference_deg: 1.3647305750147467
+output_file: fixed_frames.yaml
+output_sha256: 7727e8f0a8f79840dd229ecef899b5e5737dc547f670848cab97eb2fdf655a44

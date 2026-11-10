@@ -1,0 +1,55 @@
+# 생성일: 2026-11-10
+# 육안 flange 수직 기준 보정 후보다. 실물 정밀 정합은 미검증이다.
+# 원본: legacy/fixed_frames.yaml. 위치·TCP offset·프레임 이름은 원본 값을 유지한다.
+# 수직축 주위 방향과 위치는 실측 보정하지 않았다.
+# 측정·계산 근거: calibration/20261110_visual_flange/tilt_fit.yaml
+# 기존 arm_poses.yaml의 v1·v2 목표는 legacy 기준이며 새 수직·높이 정렬 목표가 아니다.
+# 고정 좌표계 설정이다. xarm_motion은 flange → TCP만 읽는다.
+# 위치는 m, 각도는 rad이며 RPY는 Rz(yaw) * Ry(pitch) * Rx(roll)이다.
+# parent_T_child는 child 좌표를 parent 좌표로 변환한다.
+
+frames:
+  base: world
+  left_base: left_robot_base_frame
+  # flange·TCP는 시각화 모델에서 추가하는 좌표계 이름이다.
+  left_flange: left_flange
+  left_tcp: left_tcp
+  right_base: right_robot_base_frame
+  right_flange: right_flange
+  right_tcp: right_tcp
+  camera: camera_left_optical_frame
+
+# 위치·TCP는 legacy 값을 유지한다.
+# base 회전은 육안 flange 수직 자세 3회의 평균 축을 사용해 legacy에서 최소 회전으로 보정했다.
+# 회전행렬은 행 단위이며 base는 world를 의미한다.
+fixed_transforms:
+  base_T_left_base:
+    translation_m: [-0.07670, 0.05885, -0.06801]
+    rotation_matrix:
+      - [0.608501726606, 0.774632890403, 0.172248465508]
+      - [0.096334867873, -0.287563635187, 0.952904375564]
+      - [0.787683465574, -0.563250424641, -0.249607125575]
+  base_T_right_base:
+    translation_m: [-0.07670, -0.05885, -0.06801]
+    rotation_matrix:
+      - [0.741479189205, -0.656366121596, 0.139255615471]
+      - [-0.067254487189, -0.279199757165, -0.957874902879]
+      - [0.667596768954, 0.700878741334, -0.251164376396]
+  # 기존 TCP offset의 위치를 mm에서 m로 변환했다.
+  left_flange_T_left_tcp:
+    translation_m: [0.0, 0.116, 0.116]
+    rpy_rad: [0.0, 0.7853, 1.3089969390]
+  right_flange_T_right_tcp:
+    translation_m: [0.0, 0.116, 0.116]
+    rpy_rad: [0.0, 0.7853, 1.3089969390]
+
+# 관절각과 로봇 모델로 계산하며 고정값을 넣지 않는다.
+dynamic_transforms:
+  left_base_T_left_flange: null
+  right_base_T_right_flange: null
+
+# 카메라는 토르소에 고정되어 있다. optical frame까지의 변환은 미확인이다.
+# null은 미확인이며 단위행렬이나 영점 오프셋을 의미하지 않는다.
+camera_mount:
+  parent_frame: base
+  parent_T_camera: null
