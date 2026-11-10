@@ -140,11 +140,14 @@ public:
   bool tick(double now);
   void stop();
   double duration() const { return duration_; }
+  // 실제 경과 시간과 분리한, 검사된 경로상의 진행 시간이다.
+  double path_elapsed() const { return previous_fraction_*path_duration_; }
   const std::vector<MotionArm>& arms() const { return arms_; }
   const std::vector<Feedback>& last_feedback() const { return last_feedback_; }
   std::string diagnostics() const;
 private:
   void check_cancelled() const;
+  void prepare_timing();
   void validate_start(const MotionArm& arm, const Feedback& value) const;
   void validate_tracking(const MotionArm& arm, const Feedback& value, const Joints& command,
                          const Pose& expected_tcp) const;
@@ -155,6 +158,7 @@ private:
   std::vector<Joints> previous_, velocity_;
   std::vector<Feedback> last_feedback_;
   double duration_ = 0, started_ = 0, previous_at_ = 0, arrived_at_ = -1;
+  double path_duration_ = 0, path_finished_at_ = -1;
   double previous_fraction_ = 0;
   bool prepared_ = false, active_ = false;
 };

@@ -441,6 +441,7 @@ void MotionSession::prepare(double now) {
       arm.flange_T_tcp, limits_);
     duration_ = std::max(duration_,arm.plan->duration());
   }
+  prepare_timing();
   prepared_ = true;
 }
 void MotionSession::prepare_planned(double now) {
@@ -463,7 +464,31 @@ void MotionSession::prepare_planned(double now) {
     arm.prepared = values[i];
     duration_ = std::max(duration_,arm.plan->duration());
   }
+  prepare_timing();
   prepared_ = true;
+}
+void MotionSession::prepare_timing() {
+  path_duration_ = duration_;
+  double bound = 0;
+  for (const auto& arm : arms_) {
+    const double speed = arm.plan->joint_speed_bound();
+    require(std::isfinite(speed) && speed >= 0,"유효한 경로 속도 상한이 필요합니다.");
+    bound = std::max(bound,speed*arm.plan->duration()/path_duration_);
+  }
+  // 지연 후 증분 상한 안에서 감속할 여유를 둔다. v <= step/dt + a*dt의
+  // 최소값을 사용하며, 곡률·수치 오차를 위해 20%를 남긴다.
+  const double first = limits_.period()*0.85, last = limits_.feedback_timeout;
+  const auto recoverable = [&](double dt) {
+    return limits_.joint_speed*std::min(dt,limits_.joint_dt_cap)/dt + limits_.joint_acceleration*dt;
+  };
+  double reserve = std::min(recoverable(first),recoverable(last));
+  const double critical = std::sqrt(limits_.joint_speed*limits_.joint_dt_cap/limits_.joint_acceleration);
+  if (critical >= first && critical <= last && critical >= limits_.joint_dt_cap)
+    reserve = std::min(reserve,recoverable(critical));
+  if (limits_.joint_dt_cap >= first && limits_.joint_dt_cap <= last)
+    reserve = std::min(reserve,recoverable(limits_.joint_dt_cap));
+  duration_ *= std::max(1.0,bound/(0.8*reserve));
+  require(std::isfinite(duration_) && duration_ > 0,"유효한 실행 시간이 필요합니다.");
 }
 void MotionSession::begin(double now) {
   require(prepared_ && !active_, "Enter 실행 전에 경로 준비가 필요합니다.");
@@ -483,6 +508,7 @@ void MotionSession::begin(double now) {
     started_ = previous_at_ = clock_();
     previous_fraction_ = 0;
     arrived_at_ = -1;
+    path_finished_at_ = -1;
   } catch (...) { stop(); throw; }
 }
 bool MotionSession::tick(double now) {
@@ -490,25 +516,72 @@ bool MotionSession::tick(double now) {
   try {
     check_cancelled();
     const double dt = now-previous_at_;
-    require(std::isfinite(dt) && dt > 0 && dt <= limits_.feedback_timeout, "제어 주기 타임아웃");
+    require(std::isfinite(dt) && dt > 0 && dt <= limits_.feedback_timeout,
+      "제어 주기 타임아웃: dt_ms="+std::to_string(dt*1000));
     const auto values = feedback(now);
     if (dt < limits_.period()*0.85) return false;
-    const double fraction = std::clamp((now-started_)/duration_,0.0,1.0);
+    // 지연된 벽시계 시간을 따라잡지 않고, 양팔의 공통 진행도만 전진시킨다.
+    const double desired = std::min(1.0,previous_fraction_+dt/duration_);
+    const auto feasible = [&](double fraction, std::string* reason = nullptr) {
+      for (size_t i = 0; i < arms_.size(); ++i) {
+        const auto& arm = arms_[i];
+        const Joints delta = arm.plan->sample(fraction)-previous_[i];
+        const Joints acceleration = (delta/dt-velocity_[i])/dt;
+        Eigen::Index joint = 0;
+        const double increment = delta.cwiseAbs().maxCoeff(&joint);
+        const double allowed = limits_.joint_speed*std::min(dt,limits_.joint_dt_cap);
+        std::ostringstream detail;
+        if (!delta.allFinite() || increment > allowed+1e-9) {
+          detail << "관절 증분 제한 초과: joint=" << joint+1
+                 << " step_rad=" << increment << " allowed_rad=" << allowed;
+        } else if (!acceleration.allFinite() || acceleration.cwiseAbs().maxCoeff(&joint) > limits_.joint_acceleration+1e-7) {
+          detail << "관절 가속도 제한 초과: joint=" << joint+1
+                 << " acceleration_rad_s2=" << std::abs(acceleration[joint])
+                 << " allowed_rad_s2=" << limits_.joint_acceleration;
+        } else {
+          const Pose before = arm.plan->flange(previous_fraction_), after = arm.plan->flange(fraction);
+          if (!pose_close(before,after,limits_.linear_speed*dt+1e-8,limits_.angular_speed*dt+1e-8) ||
+              !pose_close(before*arm.flange_T_tcp,after*arm.flange_T_tcp,
+                limits_.linear_speed*dt+1e-8,limits_.angular_speed*dt+1e-8))
+            detail << "Cartesian 속도 제한 초과";
+        }
+        if (!detail.str().empty()) {
+          if (reason) *reason = arm.side+": "+detail.str()+" dt_ms="+std::to_string(dt*1000)+
+            " path_fraction="+std::to_string(previous_fraction_);
+          return false;
+        }
+      }
+      return true;
+    };
+    for (size_t i = 0; i < arms_.size(); ++i)
+      validate_tracking(arms_[i],values[i],previous_[i],
+        arms_[i].plan->flange(previous_fraction_)*arms_[i].flange_T_tcp);
+    double fraction = desired;
+    std::string reason;
+    if (!feasible(desired,&reason)) {
+      // 관절별 클램프는 경로를 바꾸므로 금지한다. 같은 경로에서 가능한 진행도를 찾는다.
+      bool found = false;
+      double upper = desired;
+      for (int part = 63; part >= 0; --part) {
+        const double candidate = previous_fraction_+(desired-previous_fraction_)*part/64;
+        if (feasible(candidate)) {
+          fraction = candidate; found = true; break;
+        }
+        upper = candidate;
+      }
+      require(found,"경로 진행 조절 불가; "+reason);
+      for (int iteration = 0; iteration < 24; ++iteration) {
+        const double middle = (fraction+upper)/2;
+        if (feasible(middle)) fraction = middle;
+        else upper = middle;
+      }
+    }
     std::vector<Joints> commands, velocities;
     bool arrived = fraction == 1;
     for (size_t i = 0; i < arms_.size(); ++i) {
       const auto& arm = arms_[i];
-      const Pose old_flange = arm.plan->flange(previous_fraction_), next_flange = arm.plan->flange(fraction);
-      validate_tracking(arm, values[i], previous_[i],old_flange*arm.flange_T_tcp);
+      const Pose next_flange = arm.plan->flange(fraction);
       const Joints command = arm.plan->sample(fraction), velocity = (command-previous_[i])/dt;
-      const Pose old_tcp = old_flange*arm.flange_T_tcp, next_tcp = next_flange*arm.flange_T_tcp;
-      require((command-previous_[i]).cwiseAbs().maxCoeff() <=
-        limits_.joint_speed*std::min(dt,limits_.joint_dt_cap)+1e-9, arm.side+": 관절 증분 제한 초과");
-      require((velocity-velocity_[i]).cwiseAbs().maxCoeff()/dt <= limits_.joint_acceleration+1e-7,
-        arm.side+": 관절 가속도 제한 초과");
-      require(pose_close(old_tcp,next_tcp,limits_.linear_speed*dt+1e-8,
-        limits_.angular_speed*dt+1e-8) && pose_close(old_flange,next_flange,
-        limits_.linear_speed*dt+1e-8,limits_.angular_speed*dt+1e-8), arm.side+": Cartesian 속도 제한 초과");
       validate_tracking(arm, values[i], command,next_flange*arm.flange_T_tcp);
       arrived &= pose_close(values[i].base_T_tcp,arm.target*arm.flange_T_tcp,
         limits_.arrival_position,limits_.arrival_orientation) &&
@@ -523,11 +596,13 @@ bool MotionSession::tick(double now) {
     }
     previous_ = std::move(commands); velocity_ = std::move(velocities); previous_at_ = now;
     previous_fraction_ = fraction;
+    if (fraction == 1 && path_finished_at_ < 0) path_finished_at_ = now;
     if (arrived) { if (arrived_at_ < 0) arrived_at_ = now; }
     else arrived_at_ = -1;
     if (arrived_at_ >= 0 && now-arrived_at_ >= limits_.arrival_hold) { stop(); return true; }
-    if (now-started_ > duration_+limits_.arrival_timeout)
+    if (path_finished_at_ >= 0 && now-path_finished_at_ > limits_.arrival_timeout)
       throw std::runtime_error("실측 자세의 도착 확인 시간 초과; "+diagnostics());
+    require(now-started_ <= 2*duration_+limits_.arrival_timeout,"경로 진행 시간 초과");
     return false;
   } catch (...) { stop(); throw; }
 }

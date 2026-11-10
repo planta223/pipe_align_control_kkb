@@ -42,14 +42,15 @@ public:
     return ik_seed;
   }
   void enable() override {
-    ++enables; owned = true;
+    ++enables; owned = true; sent_at = clock;
     if (fail_enable) throw std::runtime_error("fake enable failure");
   }
   void send(const xm::Joints& command) override {
     EXPECT_TRUE(owned);
     ++sends;
     if (fail_send) throw std::runtime_error("fake send failure");
-    velocity = (command-q)/.01;
+    velocity = (command-q)/(clock-sent_at);
+    sent_at = clock;
     q = command;
   }
   void stop() override {
@@ -63,7 +64,7 @@ public:
   double& clock;
   xm::Joints q, velocity = xm::Joints::Zero();
   Eigen::Vector3d pose_error = Eigen::Vector3d::Zero();
-  double age = 0;
+  double age = 0, sent_at = 0;
   int reads = 0, enables = 0, sends = 0, stops = 0;
   int fk_calls = 0, ik_calls = 0;
   xm::Joints ik_seed = xm::Joints::Zero();
@@ -348,6 +349,25 @@ TEST_F(MotionTest, TrackingFailureOrLongCycleStopsBoth) {
     EXPECT_FALSE(left.owned); EXPECT_FALSE(right.owned);
     right.pose_error.setZero();
   }
+}
+TEST_F(MotionTest, NoFeasiblePathStepReportsJointAndCycleBeforeSending) {
+  auto s = session(true); s->prepare(clock);
+  // 시작 허용 오차 이내지만 한 주기에 회복할 수 없는 관절 차이다.
+  left.q[0] += .004;
+  s->begin(clock); clock += .01;
+  try {
+    s->tick(clock);
+    FAIL() << "잘못된 증분을 전송했습니다.";
+  } catch (const std::runtime_error& error) {
+    const std::string message = error.what();
+    EXPECT_NE(message.find("경로 진행 조절 불가"),std::string::npos);
+    EXPECT_NE(message.find("joint=1"),std::string::npos);
+    EXPECT_NE(message.find("step_rad="),std::string::npos);
+    EXPECT_NE(message.find("allowed_rad="),std::string::npos);
+    EXPECT_NE(message.find("dt_ms=10."),std::string::npos);
+  }
+  EXPECT_EQ(left.sends+right.sends,0);
+  EXPECT_EQ(left.stops,1); EXPECT_EQ(right.stops,1);
 }
 TEST_F(MotionTest, DualArmCompletesUsingMeasuredArrival) {
   auto s = session(true); s->prepare(clock); s->begin(clock);

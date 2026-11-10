@@ -25,6 +25,7 @@ class ControlFeedback(Node):
         self.latest = None
         self.received_at = None
         self.state = 'WAITING'
+        self.status_text = 'WAITING'
         self.completed = False
         self.description_received = False
         self.publisher = self.create_publisher(JointState, 'joint_states', 1)
@@ -52,12 +53,14 @@ class ControlFeedback(Node):
     def receive_status(self, msg):
         # 이전 실행의 transient 상태는 새 제어기 실행 전에 reset한다.
         if not self.completed:
+            self.status_text = msg.data
             self.state = msg.data.split(':', 1)[0]
 
     def reset(self):
         self.latest = None
         self.received_at = None
         self.state = 'WAITING'
+        self.status_text = 'WAITING'
 
     def stale(self):
         return self.received_at is not None and time.monotonic() - self.received_at > 1.0

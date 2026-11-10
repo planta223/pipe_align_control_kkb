@@ -82,6 +82,8 @@ def supervise(node, motion, visual, stopped):
     completed_at = None
     while not stopped.is_set():
         rclpy.spin_once(node, timeout_sec=0.05)
+        if node.state in ('FAULT', 'STOPPED'):
+            raise RuntimeError(node.status_text)
         if visual.poll() is not None:
             if node.completed:
                 return 0

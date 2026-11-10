@@ -51,16 +51,17 @@ public:
     ++fk_calls; return model.fk(joints)*tcp;
   }
   xm::Joints tcp_ik(const xm::Pose&) override { throw xm::IkUnavailable("가짜 SDK IK 미제공"); }
-  void enable() override { ++enables; owned = true; }
+  void enable() override { ++enables; owned = true; sent_at = clock; }
   void send(const xm::Joints& command) override {
     if (!owned) throw std::runtime_error("활성화 전 명령");
-    ++sends; velocity = (command-q)/0.01; q = command;
+    ++sends; velocity = (command-q)/(clock-sent_at); sent_at = clock; q = command;
   }
   void stop() override { ++stops; owned = false; velocity.setZero(); }
   const xm::ArmKinematics& model;
   xm::Pose tcp;
   xm::Joints q, velocity = xm::Joints::Zero();
   double& clock;
+  double sent_at = 0;
   bool owned = false;
   int enables = 0, sends = 0, stops = 0, fk_calls = 0;
 };
@@ -155,7 +156,8 @@ right_wall: {enabled: true, length_m: 0.8, height_m: 2.0, thickness_m: 0.01, gap
   auto hidden = YAML::Clone(input); hidden["blind"]["enabled"] = false;
   EXPECT_EQ(aa::environment_boxes(hidden).size(),2u);
 }
-TEST(PreAlign, EntireSequenceExecutesThroughExistingSessionWithoutRuntimeFkOrIk) {
+class PreAlignTiming : public ::testing::TestWithParam<bool> {};
+TEST_P(PreAlignTiming, EntireSequenceKeepsCheckedPathAndLimitsWithoutRuntimeFkOrIk) {
   xm::ArmKinematics model(official_model());
   const auto frames = YAML::LoadFile((root/"config/fixed_frames.yaml").string());
   const auto coordinates = YAML::LoadFile((root/"config/arm_poses.yaml").string());
@@ -181,6 +183,13 @@ TEST(PreAlign, EntireSequenceExecutesThroughExistingSessionWithoutRuntimeFkOrIk)
     for (double t = dt; t < duration; t += dt)
       EXPECT_LE((arm.plan->sample(t/duration)-arm.plan->sample((t-dt)/duration)).cwiseAbs().maxCoeff()/dt,bound+1e-7);
   }
+  // 기존 벽시계 진행 방식은 30 ms 지연 때 명령 증분 상한을 넘는다.
+  double original_max_step = 0;
+  for (double t = .03; t < duration; t += .01)
+    for (const auto& arm : arms)
+      original_max_step = std::max(original_max_step,
+        (arm.plan->sample(t/duration)-arm.plan->sample((t-.03)/duration)).cwiseAbs().maxCoeff());
+  EXPECT_GT(original_max_step,constraints.joint_speed*constraints.joint_dt_cap);
   xm::MotionSession session(std::move(arms),constraints,[]{return false;},[&]{return clock;});
   session.prepare_planned(clock);
   EXPECT_EQ(left.enables+right.enables+left.sends+right.sends,0);
@@ -191,7 +200,44 @@ TEST(PreAlign, EntireSequenceExecutesThroughExistingSessionWithoutRuntimeFkOrIk)
   session.begin(clock);
   const int calls = left.fk_calls+right.fk_calls;
   bool done = false;
-  for (int i = 0; i < 61000; ++i) { clock += .01; if (session.tick(clock)) { done = true; break; } }
+  const std::array<double,9> intervals{.01,.015,.02,.03,.01,.009,.03,.06,.01};
+  double previous_progress = 0;
+  std::array<xm::Joints,2> previous{left.q,right.q};
+  std::array<xm::Joints,2> velocity{xm::Joints::Zero(),xm::Joints::Zero()};
+  std::array<bool,3> phases{false,false,false};
+  bool adjusted = false;
+  const double began = clock;
+  for (int i = 0; i < 61000; ++i) {
+    const double dt = GetParam() ? intervals[i%intervals.size()] : .01;
+    clock += dt;
+    done = session.tick(clock);
+    const double progress = session.path_elapsed();
+    EXPECT_GE(progress,previous_progress);
+    EXPECT_LE(progress-previous_progress,dt+1e-9);
+    adjusted |= progress-previous_progress < dt*duration/session.duration()-1e-8;
+    for (size_t side = 0; side < 2; ++side) {
+      const auto& arm = session.arms()[side];
+      const auto& backend = side == 0 ? left : right;
+      const xm::Joints delta = backend.q-previous[side], next_velocity = delta/dt;
+      EXPECT_LE(delta.cwiseAbs().maxCoeff(),constraints.joint_speed*std::min(dt,constraints.joint_dt_cap)+1.1e-9);
+      EXPECT_LE((next_velocity-velocity[side]).cwiseAbs().maxCoeff()/dt,constraints.joint_acceleration+1.1e-7);
+      EXPECT_LT((backend.q-arm.plan->sample(progress/duration)).norm(),1e-10);
+      const auto before = model.fk(previous[side]), after = model.fk(backend.q);
+      EXPECT_TRUE(xm::pose_close(before,after,constraints.linear_speed*dt+1e-7,constraints.angular_speed*dt+1e-7));
+      EXPECT_TRUE(xm::pose_close(before*backend.tcp,after*backend.tcp,
+        constraints.linear_speed*dt+1e-7,constraints.angular_speed*dt+1e-7));
+      previous[side] = backend.q; velocity[side] = next_velocity;
+    }
+    const auto phase = step.phase(progress);
+    phases[phase == "vertical" ? 0 : phase == "horizontal" ? 1 : 2] = true;
+    previous_progress = progress;
+    if (done) break;
+  }
+  EXPECT_TRUE(phases[0] && phases[1] && phases[2]);
+  EXPECT_NEAR(session.path_elapsed(),duration,1e-9);
+  if (GetParam()) { EXPECT_TRUE(adjusted); EXPECT_GT(clock-began,session.duration()); }
   EXPECT_TRUE(done); EXPECT_EQ(left.fk_calls+right.fk_calls,calls);
   EXPECT_GT(left.stops,0); EXPECT_GT(right.stops,0);
 }
+
+INSTANTIATE_TEST_SUITE_P(Scheduler,PreAlignTiming,::testing::Bool());

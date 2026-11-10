@@ -12,7 +12,7 @@
 각 팔의 world X·Y와 flange 방향을 유지하며 해당 팔의 목표 높이로 이동하고, 방향을 유지하며 목표 X·Y로 이동한 뒤 최단 회전으로 목표 방향에 맞춘다.
 각 구간은 양팔 중 더 긴 시간에 맞추며, 구간 사이에는 기존 도착 유지 시간만큼 목표 관절각을 유지한다. 최종 도착은 기존 위치·방향·관절·정지 속도 조건으로 확인한다.
 
-전체 SDK FK·IK·시간 조정과 충돌 검사는 Enter 전에 수행한다. 실행 중에는 저장한 경로와 기존 100 Hz 제한 검사를 사용한다. 수직 이동은 목표 높이에 따라 상승 또는 하강한다. 충돌 경로를 자동 우회하지 않는다.
+전체 SDK FK·IK·기본 시간 조정과 충돌 검사는 Enter 전에 수행한다. 실행 중에는 저장한 경로와 기존 100 Hz 제한 검사를 사용한다. 제어 주기가 늦어지면 양팔의 공통 경로 진행도를 줄이며, 관절별로 경로를 변경하지 않는다. 지연 후 감속 여유를 위해 이동 시간이 늘어날 수 있으며 READY에는 이를 반영한 예상 시간을 표시한다. 단계 표시도 실제 경과 시간이 아닌 경로 진행도를 따른다. 수직 이동은 목표 높이에 따라 상승 또는 하강한다. 충돌 경로를 자동 우회하지 않는다.
 
 충돌 대상은 팔의 자기 충돌·양팔 사이·활성화된 책상·블라인드·오른쪽 벽이다. 고정 연결과 바로 인접한 관절 링크는 자기 충돌 검사에서 제외한다. 손·파이프·토르소 형상은 포함하지 않는다.
 `simulation_validation/config/environment_models.yaml`의 크기·위치·표시용 상자 중심과 같은 배치를 사용한다. `show_environment` 같은 RViz 실행 옵션은 검사에 영향을 주지 않는다. 환경 YAML의 `enabled`는 해당 물체의 모델 포함 여부를 결정한다.
@@ -55,7 +55,7 @@ ros2 run simulation_validation live_control --arm both --step pre_align_ready
 완료 후 RViz는 마지막 수신 자세를 유지한다. Ctrl+C로 닫는다.
 
 `READY` 후 빈 줄 Enter로 한 번 실행한다. 경로 계산 후 실제 관절각이 바뀌면 거부한다.
-오류·Ctrl+C·완료 시 양팔에 중지를 요청한다. FoundationPose는 자동 실행하지 않는다.
+오류·Ctrl+C·완료 시 양팔에 중지를 요청한다. 오류 원인은 SDK 연결 해제 대기 전에 발행하며, 시각화도 해당 원인을 표시한다. 가능한 명령을 찾지 못하면 관절 번호·증분/가속도·허용값·실제 주기를 기록하고 중지한다. FoundationPose는 자동 실행하지 않는다.
 로그는 `main/control_pc/_log/auto_align/`, 잠금은 기존 `xarm_motion`과 공통 `_colcon/locks/xarm_motion/`에 둔다.
 실측 토픽은 `/auto_align/joint_states`, `/auto_align/{left,right}/base_flange_pose`, `/auto_align/status`다.
 

@@ -85,6 +85,8 @@ private:
 int main(int argc, char** argv) {
   if (argc == 2 && std::string(argv[1]) == "--help") { std::cout << usage; return 0; }
   std::shared_ptr<Monitor> monitor;
+  // SDK 연결 해제 대기 전에 종료 원인을 발행한다.
+  std::vector<std::unique_ptr<xm::XArmBackend>> backends;
   int result = 0;
   try {
     require(argc == 3 && std::string(argv[1]) == "--step" && std::string(argv[2]) == "pre_align_ready",usage);
@@ -116,7 +118,6 @@ int main(int argc, char** argv) {
     rclcpp::init(0,nullptr,rclcpp::InitOptions(),rclcpp::SignalHandlerOptions::None);
     monitor = std::make_shared<Monitor>(frames);
     const auto cancelled = [] { return interrupted != 0 || !rclcpp::ok(); };
-    std::vector<std::unique_ptr<xm::XArmBackend>> backends;
     std::vector<xm::MotionArm> arms;
     monitor->status("PREPARING: pre_align_ready / 현재 자세 조회");
     for (size_t i = 0; i < 2; ++i) {
@@ -143,7 +144,7 @@ int main(int argc, char** argv) {
     xm::MotionSession session(std::move(arms),config.limits,cancelled);
     session.prepare_planned(xm::steady_seconds());
     monitor->status("READY: pre_align_ready / 충돌 여유 "+std::to_string(collision_config.margin*1000)+
-      "mm / 예상 "+std::to_string(duration)+"초 / Enter로 실행");
+      "mm / 예상 "+std::to_string(session.duration())+"초 / Enter로 실행");
     monitor->diagnostics(session.diagnostics());
     while (!cancelled()) {
       monitor->feedback(session.arms(),session.feedback(xm::steady_seconds()));
@@ -154,7 +155,6 @@ int main(int argc, char** argv) {
     require(!cancelled(),"실행이 취소됐습니다.");
     checker.check(joints(session.feedback(xm::steady_seconds())));
     session.begin(xm::steady_seconds());
-    const double started = xm::steady_seconds();
     auto next = std::chrono::steady_clock::now();
     double published_at = 0, diagnostic_at = 0;
     std::string phase;
@@ -164,7 +164,7 @@ int main(int argc, char** argv) {
       std::this_thread::sleep_until(next);
       const double now = xm::steady_seconds();
       if (session.tick(now)) { complete = true; monitor->diagnostics(session.diagnostics()); break; }
-      const auto current_phase = step.phase(now-started);
+      const auto current_phase = step.phase(session.path_elapsed());
       if (phase != current_phase) { phase = current_phase; monitor->status("RUNNING: pre_align_ready / "+phase); }
       if (now-diagnostic_at >= 1.0) { monitor->diagnostics(session.diagnostics()); diagnostic_at = now; }
       if (now-published_at >= 0.05) { monitor->feedback(session.arms(),session.last_feedback()); published_at = now; }
@@ -181,6 +181,7 @@ int main(int argc, char** argv) {
     if (monitor) monitor->status(std::string(interrupted?"STOPPED: ":"FAULT: ")+error.what());
     result = interrupted ? 130 : 1;
   }
+  backends.clear();
   if (rclcpp::ok()) rclcpp::shutdown();
   return result;
 }

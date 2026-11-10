@@ -96,6 +96,8 @@ private:
 int main(int argc, char** argv) {
   if (argc == 2 && std::string(argv[1]) == "--help") { std::cout << usage; return 0; }
   std::shared_ptr<Monitor> monitor;
+  // SDK 연결 해제 대기 전에 종료 원인을 발행한다.
+  std::vector<std::unique_ptr<xm::XArmBackend>> backends;
   int result = 0;
   try {
     const std::filesystem::path config_dir = std::filesystem::path(XARM_CONTROL_PC_DIR)/"config";
@@ -126,7 +128,6 @@ int main(int argc, char** argv) {
     rclcpp::init(0,nullptr,rclcpp::InitOptions(),rclcpp::SignalHandlerOptions::None);
     monitor = std::make_shared<Monitor>(frames);
     const auto cancelled = [] { return interrupted != 0 || !rclcpp::ok(); };
-    std::vector<std::unique_ptr<xm::XArmBackend>> backends;
     for (auto& arm : arms) {
       const int i = arm.side == "left" ? 0 : 1;
       backends.push_back(std::make_unique<xm::XArmBackend>(config.ips[i],arm.flange_T_tcp,
@@ -183,6 +184,7 @@ int main(int argc, char** argv) {
     if (monitor) monitor->status(std::string(interrupted?"STOPPED: ":"FAULT: ")+e.what());
     result = interrupted ? 130 : 1;
   }
+  backends.clear();
   if (rclcpp::ok()) rclcpp::shutdown();
   return result;
 }

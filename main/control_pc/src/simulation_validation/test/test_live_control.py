@@ -72,6 +72,13 @@ class FeedbackTests(unittest.TestCase):
         self.assertEqual(self.node.state, 'COMPLETED')
         self.assertEqual(list(self.messages[-1].position), [0.2] * 7)
 
+    def test_full_fault_reason_is_kept_and_reset_between_sessions(self):
+        self.node.receive_status(String(data='FAULT: left: 관절 증분 제한 초과 dt_ms=25'))
+        self.assertEqual(self.node.state, 'FAULT')
+        self.assertIn('dt_ms=25', self.node.status_text)
+        self.node.reset()
+        self.assertEqual(self.node.status_text, 'WAITING')
+
     def test_invalid_or_other_arm_feedback_is_rejected(self):
         for msg in (JointState(), self.feedback(float('nan')),
                     JointState(name=['right_joint1'], position=[0.0])):
@@ -152,6 +159,20 @@ class RunnerTests(unittest.TestCase):
                 visual.poll.return_value = 0 if exited else None
                 with patch('simulation_validation.live_control.rclpy.spin_once'), self.assertRaises(RuntimeError):
                     supervise(node, motion, visual, threading.Event())
+
+    def test_terminal_fault_wins_over_stale_feedback_during_disconnect(self):
+        for state in ('FAULT', 'STOPPED'):
+            node, motion, visual = Mock(), Mock(), Mock()
+            node.completed = False
+            node.state = state
+            node.status_text = f'{state}: left: 관절 증분 제한 초과 dt_ms=25'
+            node.stale.return_value = True
+            motion.poll.return_value = None
+            visual.poll.return_value = None
+            with patch('simulation_validation.live_control.rclpy.spin_once'), self.assertRaisesRegex(
+                    RuntimeError, f'{state}: left: 관절 증분 제한 초과 dt_ms=25'):
+                supervise(node, motion, visual, threading.Event())
+            node.stale.assert_not_called()
 
     def test_success_keeps_viewer_until_user_stop(self):
         node, motion, visual = Mock(), Mock(), Mock()
