@@ -1,4 +1,5 @@
 legacy/
+!/main/control_pc/config/legacy/
 /build/
 /install/
 /log/

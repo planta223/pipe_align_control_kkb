@@ -36,6 +36,15 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Depth: 1
+    - Class: rviz_default_plugins/Marker
+      Name: Live control status
+      Enabled: true
+      Topic:
+        Value: /simulation_validation/control_status
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Depth: 1
     - Class: rviz_default_plugins/TF
       Name: All link frames (optional)
       Enabled: false

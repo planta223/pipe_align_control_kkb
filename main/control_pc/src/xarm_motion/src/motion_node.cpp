@@ -173,7 +173,10 @@ int main(int argc, char** argv) {
       next = std::max(next,std::chrono::steady_clock::now());
     }
     session.stop();
-    if (complete) monitor->status("COMPLETED: 실측 도착 확인 후 중지·종료");
+    if (complete) {
+      monitor->feedback(session.arms(),session.last_feedback());
+      monitor->status("COMPLETED: 실측 도착 확인 후 중지·종료");
+    }
     else { monitor->status("STOPPED: 사용자 중지"); result = 130; }
   } catch (const std::exception& e) {
     std::cerr << (interrupted ? "[중지] " : "[경고] ") << e.what() << '\n';

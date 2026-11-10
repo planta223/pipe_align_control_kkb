@@ -2,7 +2,7 @@
 
 C++ 독립 패키지다. 공통 YAML의 시작·목표 flange 자세를 읽고 공식 C++ SDK의 FK·IK를 기준으로 실물 경로를 계산한다. 공식 URDF는 관절 제한과 모델 차이 진단에 사용한다. 공식 C++ SDK로 관절 피드백을 받고 `set_servo_angle_j` 명령을 보낸다.
 
-`simulation_validation`과 연결하지 않았다. `auto_align`도 아직 사용하지 않는다.
+`simulation_validation`의 `live_control` 실행기로 실측 시각화와 함께 실행할 수 있다. `auto_align`은 아직 사용하지 않는다.
 
 ## 구성
 
@@ -55,7 +55,7 @@ ros2 run xarm_motion xarm_motion \
 - Enter 전에는 연결·조회·경로 계산만 한다. Enter 후 모터 활성화, servo mode 전환 및 이동 명령을 허용한다. TCP·payload·world offset·충돌 감도는 변경하지 않는다.
 - 비활성화·설정 누락·잘못된 bool이면 SDK 객체 생성과 연결 전에 경고 후 종료한다. CLI·ROS 파라미터·환경 변수로 실행 허용 값을 덮어쓸 수 없다.
 - 설정 파일은 빌드 시 고정한 저장소의 공통 `config/`를 읽는다. YAML만 변경한 경우 재시작하면 반영된다. 저장소 자체를 옮겼다면 다시 빌드한다.
-- 실행·ROS 로그와 새 잠금 파일은 `_colcon/` 안에 둔다. 외부 native 잠금 파일이 이미 있으면 읽기 전용으로 열어 잠금을 함께 사용한다. 모든 외부 SDK 프로그램의 동시 접근을 막아 주는 장치는 아니다.
+- 실행·ROS 로그는 `_log/xarm_motion/`, 새 잠금 파일은 `_colcon/locks/xarm_motion/`에 둔다. 외부 native 잠금 파일이 이미 있으면 읽기 전용으로 열어 잠금을 함께 사용한다. 모든 외부 SDK 프로그램의 동시 접근을 막아 주는 장치는 아니다.
 
 ## 경로와 제한
 
@@ -92,7 +92,7 @@ SDK FK·IK 조회는 PREPARING 단계에서 끝낸다. FK 경로는 중간점 �
 
 `model_sdk_mm`, `model_sdk_deg`는 같은 실측 관절각에 대한 로컬 FK와 SDK TCP의 차이다. `sdk_plan_mm`, `sdk_plan_deg`는 저장한 SDK 명령 경로와 실측 TCP의 차이다. 비교는 각 팔 base 기준이며, 실제 world 장착 좌표계의 정확성을 보장하지 않는다. 로그는 `main/control_pc/_log/xarm_motion/`에 저장한다.
 
-시각화 패키지의 토픽·TF는 변경하지 않는다.
+`ros2 run simulation_validation live_control --arm both --start-pose init1 --target-pose init1_floor_parallel_v2`로 실측 시각화와 함께 실행한다. 실행 허용·시작 자세·Enter·중지 정책은 단독 실행과 같다. 완료 직전 마지막 실측값을 발행하며 시각화는 완료 상태로 마지막 수신 자세를 유지한다. 자세한 절차는 [제어 PC 시각화](../../../../docs/control_pc/README_simulation.md)를 따른다.
 
 ## 연결 없는 검증
 

@@ -71,29 +71,32 @@ class RvizJointStates(Node):
             self.finished = True
 
     def publish_goals(self, stamp):
-        markers = MarkerArray()
-        for side in SIDES:
-            frame = self.goal[side]
-            for axis in range(3):
-                marker = Marker()
-                marker.header.frame_id = self.frames[f'{side}_base']
-                marker.header.stamp = stamp
-                marker.ns = f'{side}_flange_target'
-                marker.id = axis
-                marker.type = Marker.ARROW
-                marker.action = Marker.ADD
-                marker.pose.orientation.w = 1.0
-                marker.scale.x, marker.scale.y, marker.scale.z = 0.004, 0.008, 0.012
-                marker.color.r = float(axis == 0)
-                marker.color.g = float(axis == 1)
-                marker.color.b = float(axis == 2)
-                marker.color.a = 0.6
-                direction = (frame.M.UnitX, frame.M.UnitY, frame.M.UnitZ)[axis]()
-                tip = frame.p + direction * 0.1
-                marker.points = [Point(x=frame.p[0], y=frame.p[1], z=frame.p[2]),
-                                 Point(x=tip[0], y=tip[1], z=tip[2])]
-                markers.markers.append(marker)
-        self.goal_publisher.publish(markers)
+        self.goal_publisher.publish(goal_markers(self.goal, self.frames, stamp))
+
+
+def goal_markers(goals, frames, stamp):
+    markers = MarkerArray()
+    for side, frame in goals.items():
+        for axis in range(3):
+            marker = Marker()
+            marker.header.frame_id = frames[f'{side}_base']
+            marker.header.stamp = stamp
+            marker.ns = f'{side}_flange_target'
+            marker.id = axis
+            marker.type = Marker.ARROW
+            marker.action = Marker.ADD
+            marker.pose.orientation.w = 1.0
+            marker.scale.x, marker.scale.y, marker.scale.z = 0.004, 0.008, 0.012
+            marker.color.r = float(axis == 0)
+            marker.color.g = float(axis == 1)
+            marker.color.b = float(axis == 2)
+            marker.color.a = 0.6
+            direction = (frame.M.UnitX, frame.M.UnitY, frame.M.UnitZ)[axis]()
+            tip = frame.p + direction * 0.1
+            marker.points = [Point(x=frame.p[0], y=frame.p[1], z=frame.p[2]),
+                             Point(x=tip[0], y=tip[1], z=tip[2])]
+            markers.markers.append(marker)
+    return markers
 
 
 def main(args=None):

@@ -21,5 +21,6 @@ setup(
     entry_points={'console_scripts': [
         'rviz_joint_states = simulation_validation.rviz_joint_states:main',
         'live_joint_states = simulation_validation.live_joint_states:main',
+        'live_control = simulation_validation.live_control:main',
     ]},
 )

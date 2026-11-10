@@ -1,3 +1,5 @@
+# 보존일: 2026-11-10
+# 실물 좌표계 정합 미완료. 실제 바닥 기준 수직·수평과의 일치가 확인되지 않은 참조값이다.
 # 고정 좌표계 설정이다. xarm_motion은 flange → TCP만 읽는다.
 # 위치는 m, 각도는 rad이며 RPY는 Rz(yaw) * Ry(pitch) * Rx(roll)이다.
 # parent_T_child는 child 좌표를 parent 좌표로 변환한다.

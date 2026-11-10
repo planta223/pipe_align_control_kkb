@@ -224,3 +224,4 @@ ros2 launch simulation_validation init1.launch.py mode:=live_feedback
 주소는 `left_ip:=주소 right_ip:=주소`로 변경할 수 있다. 기본 정적 표시는 `mode:=live_feedback`를 빼고 실행한다.
 
 정적·동적 시각화와 자세 선택 명령은 [시각화 안내](../control_pc/README_simulation.md)를 따른다.
+저장 자세 사이의 실물 이동을 시각화와 함께 실행하려면 같은 문서의 `live_control` 항목을 따른다. `live_feedback`과 동시에 실행하지 않는다.

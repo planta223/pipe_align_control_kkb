@@ -1,0 +1,231 @@
+import importlib.util
+from pathlib import Path
+import signal
+import subprocess
+import threading
+import time
+import unittest
+from unittest.mock import Mock, patch
+
+from launch import LaunchContext
+from launch_ros.actions import Node as LaunchNode
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
+from sensor_msgs.msg import JointState
+from std_msgs.msg import String
+
+from simulation_validation.control_feedback import ControlFeedback
+from simulation_validation.kinematics import named_pose
+from simulation_validation.live_control import (
+    arguments, main, stop_process, supervise, wait_for_visualization,
+)
+from simulation_validation.model import default_frames_file, load_yaml
+
+
+PACKAGE = Path(__file__).resolve().parents[1]
+
+
+class FeedbackTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        rclpy.init()
+
+    @classmethod
+    def tearDownClass(cls):
+        rclpy.shutdown()
+
+    def setUp(self):
+        config = Path(default_frames_file()).parent
+        self.node = ControlFeedback(('left',), load_yaml(config / 'fixed_frames.yaml')['frames'],
+                                    named_pose(load_yaml(config / 'arm_poses.yaml'), 'init1'))
+        self.messages = []
+        self.patcher = patch.object(self.node.publisher, 'publish', self.messages.append)
+        self.patcher.start()
+
+    def tearDown(self):
+        self.patcher.stop()
+        self.node.destroy_node()
+
+    def feedback(self, value=0.2):
+        return JointState(name=[f'left_joint{i}' for i in range(1, 8)], position=[value] * 7)
+
+    def test_no_initial_pose_and_no_unselected_arm(self):
+        self.node.publish()
+        self.assertEqual(self.messages, [])
+        self.node.receive_feedback(self.feedback())
+        self.node.publish()
+        self.assertEqual(self.messages[-1].name, self.node.names)
+        self.assertEqual(list(self.messages[-1].position), [0.2] * 7)
+
+    def test_stale_pose_is_preserved_and_completion_freezes_it(self):
+        self.node.receive_feedback(self.feedback())
+        self.node.received_at = time.monotonic() - 2
+        self.assertTrue(self.node.stale())
+        self.node.publish()
+        self.assertEqual(list(self.messages[-1].position), [0.2] * 7)
+        self.node.receive_status(String(data='COMPLETED: done'))
+        self.node.finish()
+        self.node.receive_feedback(self.feedback(0.9))
+        self.node.receive_status(String(data='RUNNING: another session'))
+        self.node.publish()
+        self.assertEqual(self.node.state, 'COMPLETED')
+        self.assertEqual(list(self.messages[-1].position), [0.2] * 7)
+
+    def test_invalid_or_other_arm_feedback_is_rejected(self):
+        for msg in (JointState(), self.feedback(float('nan')),
+                    JointState(name=['right_joint1'], position=[0.0])):
+            with self.subTest(msg=msg), self.assertRaises(RuntimeError):
+                self.node.receive_feedback(msg)
+        with self.assertRaises(RuntimeError):
+            self.node.finish()
+
+    def test_best_effort_input_reaches_reliable_visualization(self):
+        # SDK 대신 ROS 발행기로 실제 QoS 연결을 확인한다.
+        self.patcher.stop()
+        source = Node('fake_motion_feedback')
+        publisher = source.create_publisher(JointState, '/xarm_motion/joint_states',
+                                            qos_profile_sensor_data)
+        received = []
+        source.create_subscription(JointState, '/simulation_validation/joint_states', received.append, 1)
+        try:
+            deadline = time.monotonic() + 4.0
+            while time.monotonic() < deadline and not received:
+                publisher.publish(self.feedback())
+                rclpy.spin_once(self.node, timeout_sec=0.02)
+                rclpy.spin_once(source, timeout_sec=0.02)
+            self.assertTrue(received, '실측→시각화 QoS 연결 실패')
+            self.assertEqual(list(received[-1].position), [0.2] * 7)
+        finally:
+            source.destroy_node()
+            self.patcher.start()
+
+
+class RunnerTests(unittest.TestCase):
+    def test_required_arguments_and_no_gate_override(self):
+        for argv in ([], ['--arm', 'both'],
+                     ['--arm', 'both', '--start-pose', 'init1', '--target-pose', 'init1', '--enabled']):
+            with self.subTest(argv=argv), self.assertRaises(SystemExit):
+                arguments(argv)
+
+    def test_disabled_and_invalid_gate_never_start_processes(self):
+        for enabled in (False, None, 'true', 1):
+            with self.subTest(enabled=enabled), \
+                    patch('simulation_validation.live_control.load_yaml',
+                          return_value={'execution': {'standalone_enabled': enabled}}), \
+                    patch('simulation_validation.live_control.subprocess.Popen') as popen:
+                self.assertEqual(main(['--arm', 'both', '--start-pose', 'init1', '--target-pose', 'init1']), 1)
+                popen.assert_not_called()
+
+    def test_visualization_failure_prevents_connection(self):
+        node = Mock()
+        visual = Mock()
+        visual.poll.return_value = 1
+        with self.assertRaisesRegex(RuntimeError, '로봇에는 접속하지 않았습니다'):
+            wait_for_visualization(node, visual, threading.Event())
+
+    def test_visualization_exit_and_stale_feedback_stop_running_session(self):
+        for exited, stale in ((True, False), (False, True)):
+            with self.subTest(exited=exited, stale=stale):
+                node, motion, visual = Mock(), Mock(), Mock()
+                node.completed = False
+                node.state = 'RUNNING'
+                node.stale.return_value = stale
+                motion.poll.return_value = None
+                visual.poll.return_value = 0 if exited else None
+                with patch('simulation_validation.live_control.rclpy.spin_once'), self.assertRaises(RuntimeError):
+                    supervise(node, motion, visual, threading.Event())
+
+    def test_success_keeps_viewer_until_user_stop(self):
+        node, motion, visual = Mock(), Mock(), Mock()
+        stopped = threading.Event()
+        node.completed = False
+        node.state = 'COMPLETED'
+        node.latest = JointState()
+        motion.poll.return_value = 0
+        visual.poll.return_value = None
+
+        def finish():
+            node.completed = True
+
+        node.finish.side_effect = finish
+        calls = []
+
+        def spin(*args, **kwargs):
+            calls.append(1)
+            if len(calls) == 3:
+                stopped.set()
+
+        with patch('simulation_validation.live_control.rclpy.spin_once', side_effect=spin):
+            self.assertEqual(supervise(node, motion, visual, stopped), 0)
+        node.finish.assert_called_once()
+        self.assertEqual(len(calls), 3)
+
+    def test_fault_and_user_stop_do_not_become_success(self):
+        node, motion, visual = Mock(), Mock(), Mock()
+        node.completed = False
+        visual.poll.return_value = None
+        motion.poll.return_value = 1
+        with patch('simulation_validation.live_control.rclpy.spin_once'), self.assertRaises(RuntimeError):
+            supervise(node, motion, visual, threading.Event())
+        stopped = threading.Event()
+        stopped.set()
+        self.assertEqual(supervise(node, motion, visual, stopped), 130)
+
+    def test_cleanup_sends_stop_signal_and_waits_without_killing(self):
+        process = Mock()
+        process.poll.return_value = None
+        stop_process(process)
+        process.send_signal.assert_called_once_with(signal.SIGINT)
+        process.wait.assert_called_once_with(timeout=8)
+        process.kill.assert_not_called()
+
+    def test_shutdown_timeout_escalates_to_term_without_kill(self):
+        process = Mock()
+        process.poll.return_value = None
+        process.wait.side_effect = subprocess.TimeoutExpired('fake', 8)
+        with self.assertRaises(RuntimeError):
+            stop_process(process)
+        self.assertEqual([call.args[0] for call in process.send_signal.call_args_list],
+                         [signal.SIGINT, signal.SIGTERM])
+        process.kill.assert_not_called()
+
+
+class LaunchTests(unittest.TestCase):
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location('simulation_init1_launch', PACKAGE / 'launch/init1.launch.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.module = module
+        self.context = LaunchContext()
+        self.context.launch_configurations.update({
+            'mode': 'live_control', 'frames_file': default_frames_file(),
+            'coordinates_file': str(Path(default_frames_file()).with_name('arm_poses.yaml')),
+            'model1300_left': 'false', 'model1300_right': 'false',
+            'show_environment': 'false', 'rviz': 'false',
+            'left_ip': '192.0.2.1', 'right_ip': '192.0.2.2',
+            'seed_file': str(PACKAGE / 'config/init1.yaml'), 'pose_name': 'init1',
+            'start_pose': 'init1', 'target_pose': 'init1_floor_parallel_v2',
+            'pose_sequence': '', 'duration': '5.0',
+        })
+
+    def test_live_control_has_no_sdk_reader_or_local_ik_publisher(self):
+        nodes = [action for action in self.module.start(self.context) if isinstance(action, LaunchNode)]
+        self.assertEqual(len(nodes), 2)
+        self.context.launch_configurations['frames_file'] = str(PACKAGE / 'config/init1.yaml')
+        with self.assertRaises(ValueError):
+            self.module.start(self.context)
+
+    def test_existing_modes_keep_exactly_one_original_joint_publisher(self):
+        for mode, executable in (('static_rviz', 'rviz_joint_states'),
+                                 ('dynamic_rviz', 'rviz_joint_states'),
+                                 ('live_feedback', 'live_joint_states')):
+            with self.subTest(mode=mode):
+                self.context.launch_configurations['mode'] = mode
+                nodes = [action for action in self.module.start(self.context) if isinstance(action, LaunchNode)]
+                names = [node.node_executable for node in nodes]
+                self.assertEqual(names, ['robot_state_publisher', executable, 'rviz2'])
+
+
+if __name__ == '__main__':
+    unittest.main()

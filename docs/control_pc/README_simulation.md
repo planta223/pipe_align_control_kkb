@@ -11,9 +11,9 @@
 | `static_rviz` | 이름으로 선택한 자세를 정적으로 표시 | 없음 | 없음 | 구현 |
 | `dynamic_rviz` | 목표까지 이동 또는 여러 자세 사이의 경로를 화면에서 재생 | 없음 | 없음 | 구현 |
 | `live_feedback` | 실제 양팔 관절 피드백을 화면에 반영 | 필요 | 없음 | 구현 |
-| `live_control` | 실제 피드백 표시와 제어 명령 전송 | 필요 예정 | 있음 예정 | 미구현 예약 |
+| `live_control` | xarm_motion 이동과 실측 피드백 표시 | 필요 | Enter 후 전송 | 구현 |
 
-`live_control`을 선택하면 안내 오류와 함께 종료하며 실물에 접속하지 않는다. (아직 미구현)
+`live_control`은 `ros2 run simulation_validation live_control`로 실행한다. 같은 터미널의 입력을 유지하기 위해 시각화 launch와 C++ 제어기를 함께 관리한다.
 
 ## 실행 환경
 
@@ -21,7 +21,7 @@
 - ROS2 Humble, `simulation_validation`, 공식 `xarm_description`을 사용한다.
 - 빌드·설치·공식 모델 캐시와 colcon 로그는 `main/control_pc/_colcon/`에 모은다. 실행 로그는 `main/control_pc/_log/simulation_validation/`에 저장한다.
 - `live_feedback`에는 현재 ROS Python 환경의 공식 `xarm-python-sdk` 설치와 양팔 네트워크 연결이 필요하다.
-- 아래 시각화 명령은 로봇 이동·모터 활성화·모드 변경을 하지 않는다. 실물 초기 자세 이동은 별도 항목이다.
+- `static_rviz`·`dynamic_rviz`·`live_feedback`에는 이동·모터 활성화·모드 변경이 없다. `live_control`은 사용자의 Enter 후 실물을 이동한다.
 
 ## 1. 터미널 1 — 모델 준비와 빌드
 
@@ -158,6 +158,56 @@ ros2 topic hz /simulation_validation/joint_states
 정적 모드는 약 2 Hz, 동적 모드와 `live_feedback`은 약 20 Hz로 발행한다. 주기 확인은 Ctrl+C로 종료한다.
 `live_feedback`은 마지막 수신 자세도 계속 발행하므로 토픽 주기와 timestamp만으로 실물 수신 여부를 판단하지 않는다. 터미널 1의 경고를 확인한다.
 
+## 실측 시각화와 함께 이동 — live_control
+
+먼저 공식 모델과 SDK가 준비된 환경에서 두 패키지를 빌드한다.
+
+```bash
+cd ~/pipe_align_control_kkb
+source /opt/ros/humble/setup.bash
+source ~/project/xarm_sdk/install/setup.bash
+source main/control_pc/_colcon/install/local_setup.bash
+PYTHONDONTWRITEBYTECODE=1 colcon --log-base main/control_pc/_colcon/log build \
+  --base-paths main/control_pc/src \
+  --packages-select xarm_motion simulation_validation \
+  --build-base main/control_pc/_colcon/build \
+  --install-base main/control_pc/_colcon/install \
+  --symlink-install --cmake-args -DBUILD_TESTING=ON
+```
+
+기존 시각화와 teleop·init·다른 제어기를 종료하고 실물을 지정한 시작 자세에 놓는다.
+`main/control_pc/config/control.yaml`의 `execution.standalone_enabled`를 직접 `true`로 바꾼다. 실행 옵션·ROS 파라미터·환경 변수로 우회할 수 없다.
+
+새 터미널에서 아래를 실행한다. **이 명령은 Enter 후 실제 양팔을 움직인다.**
+
+```bash
+cd ~/pipe_align_control_kkb
+source /opt/ros/humble/setup.bash
+source ~/project/xarm_sdk/install/setup.bash
+source main/control_pc/_colcon/install/local_setup.bash
+export ROS_DOMAIN_ID=8
+export ROS_LOCALHOST_ONLY=0
+ros2 run simulation_validation live_control \
+  --arm both \
+  --start-pose init1 \
+  --target-pose init1_floor_parallel_v2
+```
+
+- 팔(`left`·`right`·`both`)·시작·목표 인자는 모두 필수다. 시작 자세로 자동 이동하지 않는다.
+- RViz와 모델 준비 후 C++ 제어기를 실행한다. 실제 시작 자세 확인·전체 경로 계산을 통과하면 `READY`가 나온다. 같은 터미널의 빈 줄 Enter로 한 번 이동한다.
+- `/xarm_motion/joint_states`의 실측값을 20 Hz로 `/simulation_validation/joint_states`에 전달한다. Python SDK 조회기와 화면용 IK 경로 재생기는 실행하지 않는다.
+- 최초 피드백 전에는 이동 관절 자세를 만들지 않는다. 한 팔 선택 시 해당 팔만 갱신한다.
+- `Goal flange axes`는 선택한 팔의 목표이며 `Live control status`는 대기·이동·완료·수신 중단 상태다. 모델의 flange·TCP 축은 URDF 계산 결과이며 SDK 자세와 차이가 있을 수 있다.
+- Ctrl+C는 제어기의 중지·종료를 먼저 처리한 뒤 시각화를 종료한다. 이동 중 시각화 프로세스 종료·실측 관절각 1초 수신 중단 시에도 중지를 요청한다. 제어기 내부의 100 ms 피드백 검사와 제한은 그대로 유지한다.
+- 정상 완료 시 제어기는 중지·종료하고 화면은 `COMPLETED - last received pose (not live)`와 마지막 수신 자세를 유지한다. 이후 실물 변화는 조회하지 않는다. Ctrl+C 또는 RViz 창 닫기로 종료한다.
+- GUI 없이 확인할 때는 `--no-rviz`를 붙인다. 완료 후에도 TF·마지막 관절각은 Ctrl+C까지 유지한다.
+- IP·TCP·모델은 공통 `control.yaml`·`fixed_frames.yaml`, 시작·목표는 `arm_poses.yaml`을 사용한다. live 모드의 다른 자세·좌표계 파일은 허용하지 않으며 화면 모델도 `control.yaml`의 `model1300`을 따른다.
+- 이동 시간은 제어기가 기존 속도·가속도 제한으로 계산한다. `duration`·`pose_sequence`는 이 실행 명령에서 지원하지 않는다.
+
+`ros2 launch simulation_validation init1.launch.py mode:=live_control`은 통합 실행기 내부의 시각화 전용 구성이다. 이 launch만 실행하면 제어기와 피드백 전달기는 시작하지 않는다. 통합 실행 중 다른 시각화·제어기를 추가 실행하지 않는다.
+
+통합 실행기·시각화 로그는 `_log/simulation_validation/`, 제어기 로그는 `_log/xarm_motion/`에 저장한다. 사용 후 실행 허용을 `false`로 되돌린다. 실물 연동 검증은 사용자가 직접 실행·Enter 입력으로 수행한다.
+
 ## 실물 init 1 비교 — 필요 시
 
 실물을 `init 1`로 이동해 정적 화면과 비교하려는 경우에만 실행한다. **이 명령은 실제 양팔을 움직인다.**
@@ -174,7 +224,7 @@ cd ~/project/xarm_sdk/install/xarm_sdk/lib/xarm_sdk
 
 ## 책상·블라인드·오른쪽 벽
 
-구현된 세 모드에서 [environment_models.yaml](../../main/control_pc/src/simulation_validation/config/environment_models.yaml)을 기본 표시한다.
+모든 모드에서 [environment_models.yaml](../../main/control_pc/src/simulation_validation/config/environment_models.yaml)을 기본 표시한다.
 값을 변경한 뒤 시각화를 재시작하면 반영되며 재빌드는 필요 없다.
 
 | 설정 | 의미 |

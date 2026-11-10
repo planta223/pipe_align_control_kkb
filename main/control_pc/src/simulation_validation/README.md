@@ -7,9 +7,9 @@
 | `static_rviz` (기본) | 선택한 자세 행렬을 정적으로 표시 | 없음 | 없음 |
 | `dynamic_rviz` | 선택한 자세 사이의 경로를 화면에서 재생 | 없음 | 없음 |
 | `live_feedback` | 실제 관절각으로 화면 갱신 | 필요 | 없음 |
-| `live_control` | 실제 피드백과 제어 명령 전송 예정 | 미구현 | 미구현 |
+| `live_control` | xarm_motion 이동과 실측 시각화 | 필요 | Enter 후 전송 |
 
-`live_control`은 선택 시 안내 오류 후 종료하며 접속·명령 전송을 하지 않는다.
+`live_control`은 `ros2 run simulation_validation live_control`로 실행한다. 팔·시작·목표는 필수이며 같은 터미널의 Enter로 이동한다. `ros2 launch ... mode:=live_control`은 통합 실행기 내부의 시각화 전용 구성이다. 단독 호출은 제어기를 실행하지 않는다.
 전체 명령 모음은 [제어 PC 시각화](../../../../docs/control_pc/README_simulation.md)를 따른다.
 
 - 공통 토르소 기준, 양팔 base·flange·TCP 축을 표시한다. 토르소·손 형상은 포함하지 않는다.
@@ -18,7 +18,7 @@
 - `config/init1.yaml`은 외부 SET1 관절각을 기록한 로컬 IK 초기 추정값이다. degree를 rad로 변환해 사용한다.
 - 공식 URDF의 회전축·관절 원점·관절 제한으로 KDL 체인을 구성한다. 정적·동적 모드는 SDK나 로봇 접속 없이 계산한다.
 - 카메라는 토르소 고정이다. 현재 장착 변환이 미확인이므로 표시하지 않는다. `camera_mount.parent_T_camera`에 `translation_m`과 `rpy_rad` 또는 `rotation_matrix`를 채우면 축을 표시한다.
-- 모든 발행·구독 토픽은 `/simulation_validation/` 아래에 둔다. 기존 제어 토픽과 TF에 연결하지 않는다.
+- 시각화 토픽·TF는 `/simulation_validation/` 아래에 둔다. `live_control`에서만 `/xarm_motion/joint_states`·`/xarm_motion/status`를 구독해 실측 관절각과 상태를 전달한다.
 
 ## 공식 모델 준비
 
@@ -117,9 +117,30 @@ ros2 launch simulation_validation init1.launch.py mode:=live_feedback
 
 실행 로그는 `main/control_pc/_log/simulation_validation/`에 저장한다. 위 `ROS_LOG_DIR` 설정은 launch 자체 로그에도 적용한다.
 
+## 실측 시각화와 함께 이동
+
+공식 C++ SDK 환경을 불러와 `xarm_motion`과 이 패키지를 빌드한다. 실행 전 teleop·init·다른 시각화를 종료하고 실제 로봇을 시작 자세에 놓는다. 공통 `control.yaml`의 `execution.standalone_enabled`를 파일에서 직접 `true`로 설정한다.
+
+```bash
+cd ~/pipe_align_control_kkb
+source /opt/ros/humble/setup.bash
+source ~/project/xarm_sdk/install/setup.bash
+source main/control_pc/_colcon/install/local_setup.bash
+export ROS_DOMAIN_ID=8
+export ROS_LOCALHOST_ONLY=0
+ros2 run simulation_validation live_control \
+  --arm both --start-pose init1 --target-pose init1_floor_parallel_v2
+```
+
+팔·시작·목표는 필수다. 모델·환경 준비 후 C++ 제어기를 실행하며 실제 시작 자세·전체 경로 검사를 통과하면 `READY`를 표시한다. 같은 터미널의 빈 줄 Enter로 이동한다. Ctrl+C와 이동 중 시각화 종료·실측 수신 중단 시에는 제어기에 중지를 요청한다. SDK 접속과 제어는 C++ 실행기 하나만 담당한다.
+
+실측 관절각을 20 Hz로 전달하며 최초 수신 전에는 임의 자세를 넣지 않는다. 목표 flange 축과 제어 상태를 함께 표시한다. 정상 완료 후 제어기는 중지·종료하고 RViz는 마지막 수신 자세와 완료 상태를 유지한다. 이후 실물은 조회하지 않으며 Ctrl+C로 화면을 닫는다. `--no-rviz`는 GUI 없이 같은 연결을 실행한다.
+
+공통 좌표계·자세 파일과 `control.yaml`의 모델 설정을 사용한다. 이동 시간·제한·도착 검사는 기존 제어기에 맡긴다. 통합 실행기·시각화 로그는 `_log/simulation_validation/`, 제어기 로그는 `_log/xarm_motion/`에 저장한다. 빌드와 상세 절차는 [제어 PC 시각화](../../../../docs/control_pc/README_simulation.md)를 따른다.
+
 ## 환경 모델
 
-[config/environment_models.yaml](config/environment_models.yaml)의 책상·블라인드·오른쪽 벽을 세 구현 모드에서 기본 표시한다.
+[config/environment_models.yaml](config/environment_models.yaml)의 책상·블라인드·오른쪽 벽을 모든 모드에서 기본 표시한다.
 책상 가까운 모서리 윗면 중앙은 `table.position_m`·`rpy_rad`, 바닥은 `floor_z_m`으로 world 기준에서 직접 지정한다.
 world +X는 전방, +Y는 왼쪽, +Z는 위쪽이다. 환경 배치는 로봇 장착값이나 저장 자세를 참조하지 않는다.
 블라인드는 먼 모서리에서 3 cm 떨어진 폭 152 cm의 판이고, 오른쪽 벽은 옆 모서리에서 안쪽 면까지 10 cm 간격인 길이 76 cm의 판이다.
