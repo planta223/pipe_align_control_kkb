@@ -28,6 +28,14 @@ Pose sdk_pose(const fp32* data) {
     Eigen::AngleAxisd(data[3],Eigen::Vector3d::UnitX())).toRotationMatrix();
   return pose;
 }
+void sdk_input(const Pose& pose, fp32* data) {
+  const Eigen::Matrix3d r = pose.linear();
+  double roll, pitch, yaw;
+  KDL::Rotation(r(0,0),r(0,1),r(0,2),r(1,0),r(1,1),r(1,2),r(2,0),r(2,1),r(2,2))
+    .GetRPY(roll,pitch,yaw);
+  for (int i = 0; i < 3; ++i) data[i] = static_cast<fp32>(pose.translation()[i]*1000);
+  data[3] = static_cast<fp32>(roll); data[4] = static_cast<fp32>(pitch); data[5] = static_cast<fp32>(yaw);
+}
 }  // namespace
 struct XArmBackend::Impl {
   std::unique_ptr<XArmAPI> sdk;
@@ -139,6 +147,32 @@ Feedback XArmBackend::read() {
     throw std::runtime_error("SDK 피드백 조회가 제한 시간을 초과했습니다.");
   impl_->read_at = value.received_at;
   return value;
+}
+Pose XArmBackend::tcp_fk(const Joints& joints) {
+  impl_->check_cancelled(); impl_->check_connected(); impl_->check_settings();
+  if (impl_->owned || !joints.allFinite()) throw std::runtime_error("FK 조회는 이동 시작 전에만 허용합니다.");
+  fp32 q[7], pose[6]{};
+  for (int i = 0; i < 7; ++i) q[i] = static_cast<fp32>(joints[i]);
+  int limited = 1;
+  checked(impl_->sdk->is_joint_limit(q,&limited),"is_joint_limit");
+  if (limited) throw std::runtime_error("FK 관절각이 컨트롤러 관절 제한을 벗어났습니다.");
+  checked(impl_->sdk->get_forward_kinematics(q,pose),"get_forward_kinematics");
+  return sdk_pose(pose);
+}
+Joints XArmBackend::tcp_ik(const Pose& target) {
+  impl_->check_cancelled(); impl_->check_connected(); impl_->check_settings();
+  if (impl_->owned || !target.matrix().allFinite()) throw std::runtime_error("IK 조회는 이동 시작 전에만 허용합니다.");
+  fp32 pose[6]{}, q[7]{};
+  sdk_input(target,pose);
+  const int code = impl_->sdk->get_inverse_kinematics(pose,q);
+  if (code == API_CODE::RET_IS_INVALID) throw IkUnavailable("SDK IK가 유효한 해를 반환하지 않았습니다.");
+  checked(code,"get_inverse_kinematics");
+  int limited = 1;
+  checked(impl_->sdk->is_joint_limit(q,&limited),"is_joint_limit");
+  if (limited) throw std::runtime_error("SDK IK 결과가 컨트롤러 관절 제한을 벗어났습니다.");
+  Joints result;
+  for (int i = 0; i < 7; ++i) result[i] = q[i];
+  return result;
 }
 void XArmBackend::enable() {
   impl_->check_cancelled();

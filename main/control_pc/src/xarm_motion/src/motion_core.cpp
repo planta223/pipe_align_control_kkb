@@ -5,6 +5,7 @@
 #include <kdl/chainiksolvervel_pinv.hpp>
 #include <kdl_parser/kdl_parser.hpp>
 #include <urdf/model.h>
+#include <Eigen/Cholesky>
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -173,7 +174,75 @@ Joints ArmKinematics::solve(const Pose& target, const Joints& seed) const {
   return value;
 }
 
-MotionPlan::MotionPlan(const ArmKinematics& arm, const Joints& actual, const Pose& target,
+SdkKinematics::SdkKinematics(ArmBackend& backend, const ArmKinematics& bounds, Pose tcp)
+  : backend_(backend), bounds_(bounds), flange_T_tcp_(std::move(tcp)) {}
+void SdkKinematics::check(const Joints& joints) const { bounds_.check(joints); }
+Pose SdkKinematics::fk(const Joints& joints) const {
+  check(joints);
+  const Pose flange = backend_.tcp_fk(joints)*flange_T_tcp_.inverse();
+  validate_pose(flange);
+  return flange;
+}
+Joints SdkKinematics::solve(const Pose& target, const Joints& seed) const {
+  validate_pose(target); check(seed);
+  // 7축 SDK IK의 다른 해로 뛰지 않도록 SDK FK의 수치 Jacobian으로 seed 근처 해를 구한다.
+  using Error = Eigen::Matrix<double,6,1>;
+  const auto difference = [](const Pose& a, const Pose& b) -> Error {
+    Error value;
+    value.head<3>() = a.translation()-b.translation();
+    const Eigen::AngleAxisd rotation(a.linear()*b.linear().transpose());
+    value.tail<3>() = rotation.axis()*rotation.angle();
+    return value;
+  };
+  Joints q = seed;
+  Pose current = fk(q);
+  for (int iteration = 0; iteration < 40; ++iteration) {
+    if (pose_close(current,target,0.00002,0.0001)) return q;
+    const Error error = difference(target,current);
+    Eigen::Matrix<double,6,7> jacobian;
+    for (int joint = 0; joint < 7; ++joint) {
+      double step = .001;
+      Joints shifted = q; shifted[joint] += step;
+      try { check(shifted); }
+      catch (const std::runtime_error&) { step = -.001; shifted = q; shifted[joint] += step; check(shifted); }
+      jacobian.col(joint) = difference(fk(shifted),current)/step;
+    }
+    Eigen::Matrix<double,6,6> normal = jacobian*jacobian.transpose();
+    normal.diagonal().array() += 1e-8;
+    Joints delta = jacobian.transpose()*normal.ldlt().solve(error);
+    require(delta.allFinite(),"SDK FK를 이용한 IK 보정 계산 실패");
+    const double largest = delta.cwiseAbs().maxCoeff();
+    if (largest > .02) delta *= .02/largest;
+    bool improved = false;
+    for (int line = 0; line < 8; ++line) {
+      const Joints next = q+delta;
+      bool in_bounds = true;
+      try { check(next); } catch (const std::runtime_error&) { in_bounds = false; }
+      if (in_bounds) {
+        const Pose frame = fk(next);
+        if (difference(target,frame).squaredNorm() < error.squaredNorm()) {
+          q = next; current = frame; improved = true; break;
+        }
+      }
+      delta *= .5;
+    }
+    if (!improved) break;
+  }
+  // 보정 실패 시 SDK IK를 확인하되 상위 경로의 연속성·FK 검사를 생략하지 않는다.
+  Joints result = backend_.tcp_ik(target*flange_T_tcp_);
+  check(result);
+  for (int i = 0; i < 7; ++i) {
+    for (double turn : {-2*std::acos(-1.0),2*std::acos(-1.0)}) {
+      Joints candidate = result; candidate[i] += turn;
+      if (std::abs(candidate[i]-seed[i]) >= std::abs(result[i]-seed[i])) continue;
+      try { check(candidate); result = candidate; } catch (const std::runtime_error&) {}
+    }
+  }
+  require(pose_close(fk(result),target,0.0002,0.001),"SDK IK·FK 결과가 목표 flange와 일치하지 않습니다.");
+  return result;
+}
+
+MotionPlan::MotionPlan(const Kinematics& arm, const Joints& actual, const Pose& target,
                        const Pose& tcp, const Limits& limits) {
   validate_pose(target);
   const Pose start = arm.fk(actual);
@@ -218,6 +287,31 @@ MotionPlan::MotionPlan(const ArmKinematics& arm, const Joints& actual, const Pos
   derivative *= 1.5;
   duration_ = std::max({duration_, 1.5*derivative/limits.effective_joint_speed(),
     1.5*std::sqrt(acceleration/limits.joint_acceleration)});
+  // FK를 준비 단계에 저장하고 중간점 보간 오차를 0.01 mm·0.0001 rad 이내로 검사한다.
+  int cache_steps = std::max(16,count*2);
+  bool cache_valid = false;
+  for (int attempt = 0; attempt < 6; ++attempt) {
+    require(cache_steps <= 40000,"FK 경로 캐시 범위를 초과했습니다.");
+    fk_cache_.clear(); fk_cache_.reserve(cache_steps+1);
+    for (int i = 0; i <= cache_steps; ++i) {
+      const double t = double(i)/cache_steps;
+      const Joints q = sample(t);
+      arm.check(q);
+      const Pose frame = arm.fk(q);
+      require(pose_close(frame,interpolate(start,target,t*t*(3-2*t)),0.0002,0.001),
+        "관절 보간 경로가 Cartesian 경로에서 벗어났습니다.");
+      fk_cache_.push_back(frame);
+    }
+    cache_valid = true;
+    for (int i = 0; i < cache_steps; ++i) {
+      const double t = (i+0.5)/cache_steps;
+      const Pose exact = arm.fk(sample(t));
+      if (!pose_close(exact,flange(t),0.00001,0.0001)) { cache_valid = false; break; }
+    }
+    if (cache_valid) break;
+    cache_steps *= 2;
+  }
+  require(cache_valid,"FK 경로 캐시의 보간 오차를 만족하지 못했습니다.");
   bool valid = false;
   for (int attempt = 0; attempt < 6; ++attempt) {
     require(duration_ <= 600, "제한값 적용 후 경로가 600초를 초과했습니다.");
@@ -230,15 +324,15 @@ MotionPlan::MotionPlan(const ArmKinematics& arm, const Joints& actual, const Pos
       const double t = double(i)/steps;
       const Joints q = sample(t), velocity = (q-previous)/dt;
       arm.check(q);
-      const Pose flange = arm.fk(q), tip = flange*tcp;
-      require(pose_close(flange, interpolate(start,target,t*t*(3-2*t)), 0.0002, 0.001),
+      const Pose frame = flange(t), tip = frame*tcp;
+      require(pose_close(frame, interpolate(start,target,t*t*(3-2*t)), 0.0002, 0.001),
         "관절 보간 경로가 Cartesian 경로에서 벗어났습니다.");
       ratio = std::max({ratio, velocity.cwiseAbs().maxCoeff()/limits.effective_joint_speed(),
         std::sqrt((velocity-previous_velocity).cwiseAbs().maxCoeff()/dt/limits.joint_acceleration),
-        (flange.translation()-previous_flange.translation()).norm()/dt/limits.linear_speed,
+        (frame.translation()-previous_flange.translation()).norm()/dt/limits.linear_speed,
         (tip.translation()-previous_tcp.translation()).norm()/dt/limits.linear_speed,
-        rotation_error(previous_flange,flange)/dt/limits.angular_speed});
-      previous = q; previous_velocity = velocity; previous_flange = flange; previous_tcp = tip;
+        rotation_error(previous_flange,frame)/dt/limits.angular_speed});
+      previous = q; previous_velocity = velocity; previous_flange = frame; previous_tcp = tip;
     }
     ratio = std::max(ratio, std::sqrt(previous_velocity.cwiseAbs().maxCoeff()/dt/limits.joint_acceleration));
     if (ratio <= 1.000001) { valid = true; break; }
@@ -254,6 +348,12 @@ Joints MotionPlan::sample(double fraction) const {
   const double u = t-i;
   return (2*u*u*u-3*u*u+1)*knots_[i] + (u*u*u-2*u*u+u)*tangents_[i] +
     (-2*u*u*u+3*u*u)*knots_[i+1] + (u*u*u-u*u)*tangents_[i+1];
+}
+Pose MotionPlan::flange(double fraction) const {
+  require(std::isfinite(fraction) && fk_cache_.size() >= 2,"FK 경로 캐시가 필요합니다.");
+  const double t = std::clamp(fraction,0.0,1.0)*(fk_cache_.size()-1);
+  const size_t i = std::min(static_cast<size_t>(t),fk_cache_.size()-2);
+  return interpolate(fk_cache_[i],fk_cache_[i+1],t-i);
 }
 
 MotionSession::MotionSession(std::vector<MotionArm> arms, Limits limits,
@@ -282,14 +382,15 @@ void MotionSession::validate_start(const MotionArm& arm, const Feedback& value) 
     limits_.start_position, limits_.start_orientation), arm.side+": 실제 자세가 지정한 시작 자세와 다릅니다.");
   require(value.velocities.cwiseAbs().maxCoeff() <= limits_.stationary_speed,
     arm.side+": 로봇이 정지 상태가 아닙니다.");
-  validate_tracking(arm, value, value.joints);
+  validate_tracking(arm, value, value.joints, arm.backend->tcp_fk(value.joints));
 }
-void MotionSession::validate_tracking(const MotionArm& arm, const Feedback& value, const Joints& q) const {
+void MotionSession::validate_tracking(const MotionArm& arm, const Feedback& value, const Joints& q,
+                                      const Pose& expected_tcp) const {
   require((q-value.joints).cwiseAbs().maxCoeff() <= limits_.joint_error,
     arm.side+": 관절 추종 오차 초과");
-  require(pose_close(arm.model->fk(q)*arm.flange_T_tcp, value.base_T_tcp,
+  require(pose_close(expected_tcp, value.base_T_tcp,
     limits_.position_error, limits_.orientation_error),
-    arm.side+": TCP 추종 오차 초과 또는 공식 모델과 실측 좌표계 불일치");
+    arm.side+": SDK 경로와 실측 TCP의 추종 오차 초과");
 }
 std::string MotionSession::diagnostics() const {
   if (last_feedback_.size() != arms_.size()) return "피드백 없음";
@@ -317,19 +418,25 @@ std::string MotionSession::diagnostics() const {
     item("speed_rad_s", actual.velocities.cwiseAbs().maxCoeff(),limits_.stationary_speed);
     out << "model_sdk_mm=" << (model_tcp.translation()-actual.base_T_tcp.translation()).norm()*1000
         << " model_sdk_deg=" << rotation_error(model_tcp,actual.base_T_tcp)*degrees;
+    if (arm.plan) {
+      const Pose planned_tcp = arm.plan->flange(previous_fraction_)*arm.flange_T_tcp;
+      out << " sdk_plan_mm=" << (planned_tcp.translation()-actual.base_T_tcp.translation()).norm()*1000
+          << " sdk_plan_deg=" << rotation_error(planned_tcp,actual.base_T_tcp)*degrees;
+    }
   }
   return out.str();
 }
 void MotionSession::prepare(double now) {
   require(!active_, "이동 중에는 경로를 준비할 수 없습니다.");
-  prepared_ = false; duration_ = 0;
+  prepared_ = false; duration_ = 0; previous_fraction_ = 0;
   const auto values = feedback(now);
   for (size_t i = 0; i < arms_.size(); ++i) {
     auto& arm = arms_[i];
     validate_start(arm, values[i]);
     arm.prepared = values[i];
     check_cancelled();
-    arm.plan = std::make_unique<MotionPlan>(*arm.model, values[i].joints, arm.target,
+    SdkKinematics kinematics(*arm.backend,*arm.model,arm.flange_T_tcp);
+    arm.plan = std::make_unique<MotionPlan>(kinematics, values[i].joints, arm.target,
       arm.flange_T_tcp, limits_);
     duration_ = std::max(duration_,arm.plan->duration());
   }
@@ -351,6 +458,7 @@ void MotionSession::begin(double now) {
   try {
     for (auto& arm : arms_) { check_cancelled(); arm.backend->enable(); }
     started_ = previous_at_ = clock_();
+    previous_fraction_ = 0;
     arrived_at_ = -1;
   } catch (...) { stop(); throw; }
 }
@@ -367,9 +475,9 @@ bool MotionSession::tick(double now) {
     bool arrived = fraction == 1;
     for (size_t i = 0; i < arms_.size(); ++i) {
       const auto& arm = arms_[i];
-      validate_tracking(arm, values[i], previous_[i]);
+      const Pose old_flange = arm.plan->flange(previous_fraction_), next_flange = arm.plan->flange(fraction);
+      validate_tracking(arm, values[i], previous_[i],old_flange*arm.flange_T_tcp);
       const Joints command = arm.plan->sample(fraction), velocity = (command-previous_[i])/dt;
-      const Pose old_flange = arm.model->fk(previous_[i]), next_flange = arm.model->fk(command);
       const Pose old_tcp = old_flange*arm.flange_T_tcp, next_tcp = next_flange*arm.flange_T_tcp;
       require((command-previous_[i]).cwiseAbs().maxCoeff() <=
         limits_.joint_speed*std::min(dt,limits_.joint_dt_cap)+1e-9, arm.side+": 관절 증분 제한 초과");
@@ -378,7 +486,7 @@ bool MotionSession::tick(double now) {
       require(pose_close(old_tcp,next_tcp,limits_.linear_speed*dt+1e-8,
         limits_.angular_speed*dt+1e-8) && pose_close(old_flange,next_flange,
         limits_.linear_speed*dt+1e-8,limits_.angular_speed*dt+1e-8), arm.side+": Cartesian 속도 제한 초과");
-      validate_tracking(arm, values[i], command);
+      validate_tracking(arm, values[i], command,next_flange*arm.flange_T_tcp);
       arrived &= pose_close(values[i].base_T_tcp,arm.target*arm.flange_T_tcp,
         limits_.arrival_position,limits_.arrival_orientation) &&
         (values[i].joints-command).cwiseAbs().maxCoeff() <= limits_.arrival_joint &&
@@ -391,6 +499,7 @@ bool MotionSession::tick(double now) {
       arms_[i].backend->send(commands[i]);
     }
     previous_ = std::move(commands); velocity_ = std::move(velocities); previous_at_ = now;
+    previous_fraction_ = fraction;
     if (arrived) { if (arrived_at_ < 0) arrived_at_ = now; }
     else arrived_at_ = -1;
     if (arrived_at_ >= 0 && now-arrived_at_ >= limits_.arrival_hold) { stop(); return true; }

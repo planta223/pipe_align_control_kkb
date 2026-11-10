@@ -8,12 +8,17 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <stdexcept>
 #include <vector>
 
 namespace xarm_motion {
 double steady_seconds();
 using Joints = Eigen::Matrix<double, 7, 1>;
 using Pose = Eigen::Isometry3d;
+class IkUnavailable : public std::runtime_error {
+public:
+  using std::runtime_error::runtime_error;
+};
 
 struct Limits {
   double rate, linear_speed, angular_speed, position_error, orientation_error;
@@ -40,12 +45,19 @@ Pose interpolate(const Pose& start, const Pose& target, double fraction);
 double rotation_error(const Pose& a, const Pose& b);
 bool pose_close(const Pose& a, const Pose& b, double position, double angle);
 
-class ArmKinematics {
+class Kinematics {
+public:
+  virtual ~Kinematics() = default;
+  virtual Pose fk(const Joints& joints) const = 0;
+  virtual Joints solve(const Pose& target, const Joints& seed) const = 0;
+  virtual void check(const Joints& joints) const = 0;
+};
+class ArmKinematics : public Kinematics {
 public:
   explicit ArmKinematics(const std::string& urdf_file);
-  Pose fk(const Joints& joints) const;
-  Joints solve(const Pose& target, const Joints& seed) const;
-  void check(const Joints& joints) const;
+  Pose fk(const Joints& joints) const override;
+  Joints solve(const Pose& target, const Joints& seed) const override;
+  void check(const Joints& joints) const override;
 private:
   KDL::Chain chain_;
   Joints lower_, upper_;
@@ -54,12 +66,15 @@ private:
 // 경로 전체를 먼저 계산한 뒤 관절 속도·가속도에 맞춰 시간을 늘린다.
 class MotionPlan {
 public:
-  MotionPlan(const ArmKinematics& arm, const Joints& actual, const Pose& target,
+  MotionPlan(const Kinematics& arm, const Joints& actual, const Pose& target,
              const Pose& flange_T_tcp, const Limits& limits);
   Joints sample(double fraction) const;
+  // 준비 중 계산한 FK만 보간하며 실행 중에는 SDK를 호출하지 않는다.
+  Pose flange(double fraction) const;
   double duration() const { return duration_; }
 private:
   std::vector<Joints> knots_, tangents_;
+  std::vector<Pose> fk_cache_;
   double duration_ = 0;
 };
 
@@ -72,9 +87,23 @@ class ArmBackend {
 public:
   virtual ~ArmBackend() = default;
   virtual Feedback read() = 0;
+  // base 기준 TCP, 위치 m·방향 rad의 읽기 전용 계산이다.
+  virtual Pose tcp_fk(const Joints& joints) = 0;
+  virtual Joints tcp_ik(const Pose& target) = 0;
   virtual void enable() = 0;
   virtual void send(const Joints& joints) = 0;
   virtual void stop() = 0;
+};
+class SdkKinematics final : public Kinematics {
+public:
+  SdkKinematics(ArmBackend& backend, const ArmKinematics& bounds, Pose flange_T_tcp);
+  Pose fk(const Joints& joints) const override;
+  Joints solve(const Pose& target, const Joints& seed) const override;
+  void check(const Joints& joints) const override;
+private:
+  ArmBackend& backend_;
+  const ArmKinematics& bounds_;
+  Pose flange_T_tcp_;
 };
 struct MotionArm {
   std::string side;
@@ -103,7 +132,8 @@ public:
 private:
   void check_cancelled() const;
   void validate_start(const MotionArm& arm, const Feedback& value) const;
-  void validate_tracking(const MotionArm& arm, const Feedback& value, const Joints& command) const;
+  void validate_tracking(const MotionArm& arm, const Feedback& value, const Joints& command,
+                         const Pose& expected_tcp) const;
   std::vector<MotionArm> arms_;
   Limits limits_;
   std::function<bool()> cancelled_;
@@ -111,6 +141,7 @@ private:
   std::vector<Joints> previous_, velocity_;
   std::vector<Feedback> last_feedback_;
   double duration_ = 0, started_ = 0, previous_at_ = 0, arrived_at_ = -1;
+  double previous_fraction_ = 0;
   bool prepared_ = false, active_ = false;
 };
 }  // namespace xarm_motion

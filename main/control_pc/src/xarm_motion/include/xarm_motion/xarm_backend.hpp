@@ -10,6 +10,8 @@ public:
               double report_timeout);
   ~XArmBackend() override;
   Feedback read() override;
+  Pose tcp_fk(const Joints& joints) override;
+  Joints tcp_ik(const Pose& target) override;
   void enable() override;
   void send(const Joints& joints) override;
   void stop() override;

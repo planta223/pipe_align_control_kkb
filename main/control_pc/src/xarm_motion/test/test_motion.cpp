@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 #include <cmath>
 #include <future>
+#include <regex>
 
 namespace xm = xarm_motion;
 namespace {
@@ -21,9 +22,24 @@ public:
   xm::Feedback read() override {
     ++reads;
     if (fail_read) throw std::runtime_error("fake feedback failure");
-    xm::Pose pose = model.fk(q)*tcp;
+    xm::Pose pose = calibration*model.fk(q)*tcp;
     pose.translation() += pose_error;
     return {q,velocity,pose,clock-age};
+  }
+  xm::Pose tcp_fk(const xm::Joints& joints) override {
+    if (owned) throw std::runtime_error("FK called during motion");
+    if (fail_fk) throw std::runtime_error("fake FK failure");
+    ++fk_calls;
+    return calibration*model.fk(joints)*tcp;
+  }
+  xm::Joints tcp_ik(const xm::Pose& target) override {
+    if (owned) throw std::runtime_error("IK called during motion");
+    ++ik_calls;
+    if (fail_ik) throw std::runtime_error("fake IK failure");
+    if (ik_unavailable) throw xm::IkUnavailable("fake IK unavailable");
+    if (!have_ik_seed) { ik_seed = q; have_ik_seed = true; }
+    ik_seed = model.solve(calibration.inverse()*target*tcp.inverse(),ik_seed);
+    return ik_seed;
   }
   void enable() override {
     ++enables; owned = true;
@@ -43,11 +59,15 @@ public:
   }
   const xm::ArmKinematics& model;
   xm::Pose tcp;
+  xm::Pose calibration = xm::Pose::Identity();
   double& clock;
   xm::Joints q, velocity = xm::Joints::Zero();
   Eigen::Vector3d pose_error = Eigen::Vector3d::Zero();
   double age = 0;
   int reads = 0, enables = 0, sends = 0, stops = 0;
+  int fk_calls = 0, ik_calls = 0;
+  xm::Joints ik_seed = xm::Joints::Zero();
+  bool have_ik_seed = false, fail_ik = false, ik_unavailable = false, fail_fk = false;
   bool fail_read = false, fail_send = false, fail_enable = false, fail_stop = false, owned = false;
 };
 class MotionTest : public ::testing::Test {
@@ -61,7 +81,8 @@ protected:
   xm::MotionArm arm(const std::string& side, FakeBackend& backend) {
     auto target_joints = backend.q;
     target_joints[5] += .015;
-    return {side,&backend,&model,tcp,model.fk(backend.q),model.fk(target_joints),{},nullptr};
+    return {side,&backend,&model,tcp,backend.tcp_fk(backend.q)*tcp.inverse(),
+      backend.tcp_fk(target_joints)*tcp.inverse(),{},nullptr};
   }
   std::unique_ptr<xm::MotionSession> session(bool both = false) {
     std::vector<xm::MotionArm> arms;
@@ -155,6 +176,39 @@ TEST_F(MotionTest, OfficialModelRoundTripAndJointLimits) {
   invalid[0] = std::numeric_limits<double>::quiet_NaN();
   EXPECT_ANY_THROW(model.solve(xm::Pose::Identity(),invalid));
 }
+TEST_F(MotionTest, SdkProviderUsesCalibratedTcpAndFlangeTransforms) {
+  left.calibration.translation()[0] = .003;
+  left.calibration.linear() = Eigen::AngleAxisd(.035,Eigen::Vector3d::UnitZ()).toRotationMatrix();
+  xm::SdkKinematics sdk(left,model,tcp);
+  const auto start = sdk.fk(left.q);
+  EXPECT_GT(xm::rotation_error(start,model.fk(left.q)),.03);
+  auto desired = left.q; desired[5] += .01;
+  const auto goal = sdk.fk(desired);
+  const auto result = sdk.solve(goal,left.q);
+  EXPECT_TRUE(xm::pose_close(sdk.fk(result),goal,.00002,.0001));
+  EXPECT_GT(left.fk_calls,0); EXPECT_EQ(left.ik_calls,0);
+  EXPECT_EQ(left.enables+left.sends,0);
+}
+TEST_F(MotionTest, SeededFkCorrectionWorksWhenAnalyticalIkHasNoSolution) {
+  left.ik_unavailable = true;
+  xm::SdkKinematics sdk(left,model,tcp);
+  auto desired = left.q; desired[5] += .01;
+  const auto goal = sdk.fk(desired);
+  const auto result = sdk.solve(goal,left.q);
+  EXPECT_TRUE(xm::pose_close(sdk.fk(result),goal,.00002,.0001));
+  EXPECT_LT((result-left.q).cwiseAbs().maxCoeff(),.05);
+  EXPECT_EQ(left.ik_calls,0);
+  EXPECT_EQ(left.enables+left.sends,0);
+}
+TEST_F(MotionTest, CachedFkMatchesProviderBetweenSamples) {
+  xm::SdkKinematics sdk(left,model,tcp);
+  auto target_q = left.q; target_q[5] += .02;
+  xm::MotionPlan plan(sdk,left.q,sdk.fk(target_q),tcp,limits);
+  for (int i = 0; i <= 137; ++i) {
+    const double t = double(i)/137;
+    EXPECT_TRUE(xm::pose_close(plan.flange(t),sdk.fk(plan.sample(t)),.00001,.0001));
+  }
+}
 TEST_F(MotionTest, NamedPlansStartAtMeasuredJointsAndRespectLimits) {
   const auto poses = YAML::LoadFile(config_dir+"arm_poses.yaml");
   const auto frames = YAML::LoadFile(config_dir+"fixed_frames.yaml");
@@ -220,6 +274,11 @@ TEST_F(MotionTest, UnreachableTargetBlocksBeforeEnable) {
   std::vector<xm::MotionArm> arms; arms.push_back(std::move(value));
   xm::MotionSession s(std::move(arms),limits,[]{return false;},[this]{return clock;});
   EXPECT_ANY_THROW(s.prepare(clock));
+  EXPECT_EQ(left.enables+left.sends,0);
+}
+TEST_F(MotionTest, SdkKinematicsFailureBlocksBeforeEnable) {
+  auto s = session(); left.fail_fk = true;
+  EXPECT_ANY_THROW(s->prepare(clock));
   EXPECT_EQ(left.enables+left.sends,0);
 }
 TEST_F(MotionTest, MovementWhileWaitingRequiresRestart) {
@@ -292,16 +351,31 @@ TEST_F(MotionTest, TrackingFailureOrLongCycleStopsBoth) {
 }
 TEST_F(MotionTest, DualArmCompletesUsingMeasuredArrival) {
   auto s = session(true); s->prepare(clock); s->begin(clock);
+  const int queries = left.fk_calls+right.fk_calls+left.ik_calls+right.ik_calls;
   bool done = false;
   const int count = static_cast<int>(std::ceil((s->duration()+limits.arrival_hold+1)*limits.rate));
   for (int i = 0; i < count && !done; ++i) {
     clock += .01;
     done = s->tick(clock);
+    s->diagnostics();
   }
   EXPECT_TRUE(done);
   EXPECT_GT(left.sends,0); EXPECT_GT(right.sends,0);
   EXPECT_EQ(left.stops,1); EXPECT_EQ(right.stops,1);
   EXPECT_FALSE(left.owned); EXPECT_FALSE(right.owned);
+  EXPECT_EQ(left.fk_calls+right.fk_calls+left.ik_calls+right.ik_calls,queries);
+}
+TEST_F(MotionTest, CalibratedBackendArrivesDespiteNominalModelDisagreement) {
+  left.calibration.translation()[0] = .003;
+  left.calibration.linear() = Eigen::AngleAxisd(.035,Eigen::Vector3d::UnitZ()).toRotationMatrix();
+  auto s = session(true); s->prepare(clock); s->begin(clock);
+  bool done = false;
+  const int count = static_cast<int>(std::ceil((s->duration()+limits.arrival_hold+1)*limits.rate));
+  for (int i = 0; i < count && !done; ++i) { clock += .01; done = s->tick(clock); }
+  EXPECT_TRUE(done);
+  EXPECT_GT(xm::rotation_error(model.fk(left.q)*tcp,left.calibration*model.fk(left.q)*tcp),
+    limits.arrival_orientation);
+  EXPECT_EQ(left.stops,1); EXPECT_EQ(right.stops,1);
 }
 TEST_F(MotionTest, ArrivalRequiresActualPoseNotOnlyLastCommand) {
   auto s = session(true); s->prepare(clock); s->begin(clock);
@@ -315,8 +389,13 @@ TEST_F(MotionTest, ArrivalRequiresActualPoseNotOnlyLastCommand) {
     catch (const std::runtime_error& e) {
       const std::string message = e.what();
       EXPECT_NE(message.find("도착 확인"),std::string::npos);
-      EXPECT_NE(message.find("left: tcp_pos_mm=3.000/2.000[FAIL]"),std::string::npos);
-      EXPECT_NE(message.find("right: tcp_pos_mm=0.000/2.000[OK]"),std::string::npos);
+      std::smatch left_position, right_position;
+      ASSERT_TRUE(std::regex_search(message,left_position,
+        std::regex(R"(left: tcp_pos_mm=([0-9.]+)/2\.000\[FAIL\])")));
+      ASSERT_TRUE(std::regex_search(message,right_position,
+        std::regex(R"(right: tcp_pos_mm=([0-9.]+)/2\.000\[OK\])")));
+      EXPECT_NEAR(std::stod(left_position[1]),3,.025);
+      EXPECT_LT(std::stod(right_position[1]),.025);
       EXPECT_NE(message.find("joint_deg=0.000/0.286[OK]"),std::string::npos);
       EXPECT_NE(message.find("speed_rad_s=0.000/0.010[OK]"),std::string::npos);
       EXPECT_NE(message.find("model_sdk_mm=3.000"),std::string::npos);

@@ -35,7 +35,7 @@ ros2 run xarm_motion xarm_motion \
 
 - `--arm`: `left`, `right`, `both` 중 선택한다. 팔·시작·목표 인자는 모두 필수다.
 - 시작·목표 이름은 `main/control_pc/config/arm_poses.yaml`에서 읽는다.
-- `READY`와 예상 이동 시간을 확인한 뒤 빈 줄 **Enter**로 이동을 시작한다.
+- SDK FK·IK로 전체 경로를 먼저 계산한다. `READY`와 예상 이동 시간을 확인한 뒤 빈 줄 **Enter**로 이동을 시작한다.
 - **Ctrl+C**는 선택한 팔 모두에 중지를 요청하고 종료한다. 도착 확인 후에도 중지하고 종료한다.
 - 실제 자세가 시작 조건과 다르거나 제한값 검사를 통과하지 못하면 이동을 거부한다.
 
