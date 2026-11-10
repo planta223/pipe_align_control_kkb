@@ -255,7 +255,7 @@ world +X를 전방, +Y를 왼쪽, +Z를 위쪽으로 사용한다. 책상 원점
 - 자세 목록은 `coordinates_file:=/절대경로/arm_poses.yaml`로 변경한다.
 - 로컬 IK 초기 추정 관절각은 `seed_file:=/절대경로/init1.yaml`로 지정한다. 정적·동적 모드에서 사용한다.
 - 공통 장착 변환과 TCP는 [fixed_frames.yaml](../../main/control_pc/config/fixed_frames.yaml)을 읽는다.
-- 현재 장착 회전은 2026-11-10 육안 flange 수직 자세 3회를 사용해 [legacy](../../main/control_pc/config/legacy/fixed_frames.yaml)에서 최소 회전으로 보정한 후보다. 위치·TCP는 legacy 값을 유지하며 실물 정밀 정합은 미검증이다. [계산 결과](../../main/control_pc/config/calibration/20261110_visual_flange/tilt_fit.yaml)에 측정 근거와 잔차를 기록했다.
+- 현재 장착 회전은 2026-11-10 육안 flange 수직 자세 3회를 사용해 [legacy](../../main/control_pc/config/legacy/fixed_frames.yaml)에서 최소 회전으로 보정한 후보다. 위치·TCP는 legacy 값을 유지하며 실물 정밀 정합은 미검증이다. [계산 결과](../../main/control_pc/_log/calibration_20261110_163119/tilt_fit.yaml)에 측정 근거와 잔차를 기록했다.
 - 자세 행렬은 [arm_poses.yaml](../../main/control_pc/config/arm_poses.yaml)의 `poses` 아래에서 이름으로 선택한다. 각 자세는 `left/right.base_T_flange` 4×4 행렬이며, 각 팔 base 기준·위치 m 단위다.
 - `init1`은 저장 당시 실측 자세다. `init1_floor_parallel_v1`은 legacy 기준 양팔 flange 위치를 유지하며 world -Z 방향을 보도록 계산한 목표이고, `init1_floor_parallel_v2`는 v1에서 왼팔 높이를 오른팔에 맞춘 목표다. 두 목표는 새 장착 회전 기준으로 재계산하지 않았으며 새 좌표계에서의 수직·높이 정렬을 보장하지 않는다.
 - [init1.yaml](../../main/control_pc/src/simulation_validation/config/init1.yaml)의 관절각은 로컬 IK의 초기 추정값이다. 화면 자세 자체는 선택한 행렬로 결정한다. YAML 변경 후에는 시각화를 재시작한다.

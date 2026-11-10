@@ -2,7 +2,7 @@
 # 육안 flange 수직 기준 보정 후보다. 실물 정밀 정합은 미검증이다.
 # 원본: legacy/fixed_frames.yaml. 위치·TCP offset·프레임 이름은 원본 값을 유지한다.
 # 수직축 주위 방향과 위치는 실측 보정하지 않았다.
-# 측정·계산 근거: calibration/20261110_visual_flange/tilt_fit.yaml
+# 측정·계산 근거: ../_log/calibration_20261110_163119/tilt_fit.yaml
 # 기존 arm_poses.yaml의 v1·v2 목표는 legacy 기준이며 새 수직·높이 정렬 목표가 아니다.
 # 고정 좌표계 설정이다. xarm_motion은 flange → TCP만 읽는다.
 # 위치는 m, 각도는 rad이며 RPY는 Rz(yaw) * Ry(pitch) * Rx(roll)이다.
