@@ -189,6 +189,22 @@ TEST_F(MotionTest, PreparationAndFeedbackDoNotEnableOrSend) {
   s->stop();
   EXPECT_EQ(left.stops+right.stops,0);
 }
+TEST_F(MotionTest, DiagnosticsUsesCachedFeedbackWithoutHardwareCalls) {
+  auto s = session(true);
+  EXPECT_EQ(s->diagnostics(),"피드백 없음");
+  s->prepare(clock);
+  const int reads = left.reads+right.reads;
+  const auto report = s->diagnostics();
+  EXPECT_NE(report.find("left: "),std::string::npos);
+  EXPECT_NE(report.find("right: "),std::string::npos);
+  EXPECT_NE(report.find("tcp_pos_mm="),std::string::npos);
+  EXPECT_NE(report.find("tcp_rot_deg="),std::string::npos);
+  EXPECT_NE(report.find("joint_deg="),std::string::npos);
+  EXPECT_NE(report.find("speed_rad_s="),std::string::npos);
+  EXPECT_NE(report.find("model_sdk_mm=0.000"),std::string::npos);
+  EXPECT_EQ(left.reads+right.reads,reads);
+  EXPECT_EQ(left.enables+right.enables+left.sends+right.sends,0);
+}
 TEST_F(MotionTest, StartMismatchBlocksBothArmsBeforeEnable) {
   auto left_arm = arm("left",left), right_arm = arm("right",right);
   right_arm.start.translation()[0] += .02;
@@ -288,7 +304,7 @@ TEST_F(MotionTest, DualArmCompletesUsingMeasuredArrival) {
   EXPECT_FALSE(left.owned); EXPECT_FALSE(right.owned);
 }
 TEST_F(MotionTest, ArrivalRequiresActualPoseNotOnlyLastCommand) {
-  auto s = session(); s->prepare(clock); s->begin(clock);
+  auto s = session(true); s->prepare(clock); s->begin(clock);
   // 추종 허용 5 mm 이내지만 도착 허용 2 mm 밖에 둔다.
   left.pose_error[0] = .003;
   bool threw = false;
@@ -297,10 +313,16 @@ TEST_F(MotionTest, ArrivalRequiresActualPoseNotOnlyLastCommand) {
     clock += .01;
     try { EXPECT_FALSE(s->tick(clock)); }
     catch (const std::runtime_error& e) {
-      EXPECT_NE(std::string(e.what()).find("도착 확인"),std::string::npos);
+      const std::string message = e.what();
+      EXPECT_NE(message.find("도착 확인"),std::string::npos);
+      EXPECT_NE(message.find("left: tcp_pos_mm=3.000/2.000[FAIL]"),std::string::npos);
+      EXPECT_NE(message.find("right: tcp_pos_mm=0.000/2.000[OK]"),std::string::npos);
+      EXPECT_NE(message.find("joint_deg=0.000/0.286[OK]"),std::string::npos);
+      EXPECT_NE(message.find("speed_rad_s=0.000/0.010[OK]"),std::string::npos);
+      EXPECT_NE(message.find("model_sdk_mm=3.000"),std::string::npos);
       threw = true; break;
     }
   }
-  EXPECT_TRUE(threw); EXPECT_EQ(left.stops,1);
+  EXPECT_TRUE(threw); EXPECT_EQ(left.stops,1); EXPECT_EQ(right.stops,1);
 }
 }  // namespace

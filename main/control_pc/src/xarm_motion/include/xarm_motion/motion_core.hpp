@@ -99,6 +99,7 @@ public:
   double duration() const { return duration_; }
   const std::vector<MotionArm>& arms() const { return arms_; }
   const std::vector<Feedback>& last_feedback() const { return last_feedback_; }
+  std::string diagnostics() const;
 private:
   void check_cancelled() const;
   void validate_start(const MotionArm& arm, const Feedback& value) const;

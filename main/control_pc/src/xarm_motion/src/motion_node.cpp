@@ -62,6 +62,9 @@ public:
     status_->publish(msg);
     RCLCPP_INFO(get_logger(),"%s",text.c_str());
   }
+  void diagnostics(const std::string& text) {
+    RCLCPP_INFO(get_logger(),"MEASURE: %s",text.c_str());
+  }
   void feedback(const std::vector<xm::MotionArm>& arms, const std::vector<xm::Feedback>& values) {
     sensor_msgs::msg::JointState joints; joints.header.stamp = now();
     for (size_t i = 0; i < arms.size(); ++i) {
@@ -137,6 +140,7 @@ int main(int argc, char** argv) {
     session.prepare(xm::steady_seconds());
     monitor->status("READY: "+args.at("--arm")+" / "+args.at("--start-pose")+" -> "+
       args.at("--target-pose")+" / 예상 "+std::to_string(session.duration())+"초");
+    monitor->diagnostics(session.diagnostics());
     std::cout << "Enter를 누르면 로봇 제어를 시작합니다. Ctrl+C는 중지·종료입니다.\n" << std::flush;
     while (!cancelled()) {
       monitor->feedback(session.arms(),session.feedback(xm::steady_seconds()));
@@ -148,14 +152,18 @@ int main(int argc, char** argv) {
     session.begin(xm::steady_seconds());
     monitor->status("RUNNING: Ctrl+C로 중지");
     auto next = std::chrono::steady_clock::now();
-    double published_at = 0;
+    double published_at = 0, diagnostic_at = 0;
     bool complete = false;
     while (!cancelled()) {
       next += std::chrono::duration_cast<std::chrono::steady_clock::duration>(
         std::chrono::duration<double>(config.limits.period()));
       std::this_thread::sleep_until(next);
       const double now = xm::steady_seconds();
-      if (session.tick(now)) { complete = true; break; }
+      if (session.tick(now)) { monitor->diagnostics(session.diagnostics()); complete = true; break; }
+      if (now-diagnostic_at >= 1.0) {
+        monitor->diagnostics(session.diagnostics());
+        diagnostic_at = now;
+      }
       if (now-published_at >= 0.05) {
         monitor->feedback(session.arms(),session.last_feedback());
         published_at = now;

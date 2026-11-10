@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <iomanip>
+#include <sstream>
 #include <stdexcept>
 
 namespace xarm_motion {
@@ -289,6 +291,35 @@ void MotionSession::validate_tracking(const MotionArm& arm, const Feedback& valu
     limits_.position_error, limits_.orientation_error),
     arm.side+": TCP 추종 오차 초과 또는 공식 모델과 실측 좌표계 불일치");
 }
+std::string MotionSession::diagnostics() const {
+  if (last_feedback_.size() != arms_.size()) return "피드백 없음";
+  const double degrees = 180/std::acos(-1.0);
+  std::ostringstream out;
+  out << std::fixed << std::setprecision(3);
+  const auto item = [&out](const char* name, double value, double limit) {
+    out << name << '=' << value << '/' << limit << (value <= limit ? "[OK] " : "[FAIL] ");
+  };
+  for (size_t i = 0; i < arms_.size(); ++i) {
+    if (i) out << " | ";
+    const auto& arm = arms_[i];
+    const auto& actual = last_feedback_[i];
+    const Pose goal = arm.target*arm.flange_T_tcp;
+    const Pose model_tcp = arm.model->fk(actual.joints)*arm.flange_T_tcp;
+    out << arm.side << ": ";
+    item("tcp_pos_mm", (actual.base_T_tcp.translation()-goal.translation()).norm()*1000,
+      limits_.arrival_position*1000);
+    item("tcp_rot_deg", rotation_error(actual.base_T_tcp,goal)*degrees,
+      limits_.arrival_orientation*degrees);
+    if (arm.plan) {
+      item("joint_deg", (actual.joints-arm.plan->sample(1)).cwiseAbs().maxCoeff()*degrees,
+        limits_.arrival_joint*degrees);
+    } else out << "joint_deg=미계산 ";
+    item("speed_rad_s", actual.velocities.cwiseAbs().maxCoeff(),limits_.stationary_speed);
+    out << "model_sdk_mm=" << (model_tcp.translation()-actual.base_T_tcp.translation()).norm()*1000
+        << " model_sdk_deg=" << rotation_error(model_tcp,actual.base_T_tcp)*degrees;
+  }
+  return out.str();
+}
 void MotionSession::prepare(double now) {
   require(!active_, "이동 중에는 경로를 준비할 수 없습니다.");
   prepared_ = false; duration_ = 0;
@@ -363,7 +394,8 @@ bool MotionSession::tick(double now) {
     if (arrived) { if (arrived_at_ < 0) arrived_at_ = now; }
     else arrived_at_ = -1;
     if (arrived_at_ >= 0 && now-arrived_at_ >= limits_.arrival_hold) { stop(); return true; }
-    require(now-started_ <= duration_+limits_.arrival_timeout, "실측 자세의 도착 확인 시간 초과");
+    if (now-started_ > duration_+limits_.arrival_timeout)
+      throw std::runtime_error("실측 자세의 도착 확인 시간 초과; "+diagnostics());
     return false;
   } catch (...) { stop(); throw; }
 }
