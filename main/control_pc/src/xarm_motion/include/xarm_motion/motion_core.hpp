@@ -63,19 +63,31 @@ private:
   Joints lower_, upper_;
 };
 
+class MotionTrajectory {
+public:
+  virtual ~MotionTrajectory() = default;
+  virtual Joints sample(double fraction) const = 0;
+  virtual Pose flange(double fraction) const = 0;
+  virtual double duration() const = 0;
+  // 모든 관절에 적용되는 연속 시간 속도 상한이다.
+  virtual double joint_speed_bound() const = 0;
+};
+
 // 경로 전체를 먼저 계산한 뒤 관절 속도·가속도에 맞춰 시간을 늘린다.
-class MotionPlan {
+class MotionPlan : public MotionTrajectory {
 public:
   MotionPlan(const Kinematics& arm, const Joints& actual, const Pose& target,
              const Pose& flange_T_tcp, const Limits& limits);
-  Joints sample(double fraction) const;
+  Joints sample(double fraction) const override;
   // 준비 중 계산한 FK만 보간하며 실행 중에는 SDK를 호출하지 않는다.
-  Pose flange(double fraction) const;
-  double duration() const { return duration_; }
+  Pose flange(double fraction) const override;
+  double duration() const override { return duration_; }
+  double joint_speed_bound() const override { return joint_speed_bound_; }
 private:
   std::vector<Joints> knots_, tangents_;
   std::vector<Pose> fk_cache_;
   double duration_ = 0;
+  double joint_speed_bound_ = 0;
 };
 
 struct Feedback {
@@ -111,7 +123,7 @@ struct MotionArm {
   const ArmKinematics* model;
   Pose flange_T_tcp, start, target;
   Feedback prepared;
-  std::unique_ptr<MotionPlan> plan;
+  std::unique_ptr<MotionTrajectory> plan;
 };
 
 // SDK와 터미널 입력을 분리해 연결 없는 테스트에서도 실행 순서를 검증한다.
@@ -122,6 +134,8 @@ public:
   ~MotionSession();
   std::vector<Feedback> feedback(double now);
   void prepare(double now);
+  // 외부 단계가 미리 계산·검사한 경로를 사용한다. 시작점은 실측으로 재검사한다.
+  void prepare_planned(double now);
   void begin(double now);
   bool tick(double now);
   void stop();

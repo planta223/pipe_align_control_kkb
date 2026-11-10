@@ -18,12 +18,12 @@ from .kinematics import named_pose
 from .model import default_frames_file, load_yaml
 
 
-def settings():
+def settings(gate='standalone_enabled'):
     config_dir = Path(default_frames_file()).parent
     control = load_yaml(config_dir / 'control.yaml')
     # 원본 파일만 검사한다. 최종 허용 검사는 C++ 실행기가 다시 수행한다.
-    if control.get('execution', {}).get('standalone_enabled') is not True:
-        raise ValueError('control.yaml의 execution.standalone_enabled=true가 필요합니다. 실행 옵션으로 변경할 수 없습니다.')
+    if control.get('execution', {}).get(gate) is not True:
+        raise ValueError(f'control.yaml의 execution.{gate}=true가 필요합니다. 실행 옵션으로 변경할 수 없습니다.')
     for side in ('left', 'right'):
         if type(control['robots'][side]['model1300']) is not bool:
             raise ValueError(f'{side} model1300은 bool이어야 합니다.')
@@ -31,12 +31,20 @@ def settings():
 
 
 def arguments(argv):
-    parser = argparse.ArgumentParser(description='실측 시각화와 xarm_motion을 함께 실행합니다. READY 후 Enter로 이동합니다.')
+    parser = argparse.ArgumentParser(description='실측 시각화와 C++ 제어기를 함께 실행합니다. READY 후 Enter로 이동합니다.')
     parser.add_argument('--arm', required=True, choices=('left', 'right', 'both'))
-    parser.add_argument('--start-pose', required=True)
-    parser.add_argument('--target-pose', required=True)
+    parser.add_argument('--start-pose')
+    parser.add_argument('--target-pose')
+    parser.add_argument('--step', choices=('pre_align_ready',), help='현재 실측 자세에서 auto_align 단계를 실행합니다.')
     parser.add_argument('--no-rviz', action='store_true', help='GUI 없이 관절각·TF만 발행합니다.')
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.step:
+        if args.arm != 'both' or args.start_pose or args.target_pose:
+            parser.error('pre_align_ready는 --arm both를 사용하며 시작·목표 자세 인자를 받지 않습니다.')
+        args.target_pose = 'pre_align_ready'
+    elif not args.start_pose or not args.target_pose:
+        parser.error('--start-pose와 --target-pose는 모두 필수입니다.')
+    return args
 
 
 def stop_process(process, group=False):
@@ -81,7 +89,7 @@ def supervise(node, motion, visual, stopped):
         code = motion.poll()
         if code is not None and not node.completed:
             if code != 0:
-                raise RuntimeError(f'xarm_motion이 오류로 종료했습니다: code={code}')
+                raise RuntimeError(f'제어기가 오류로 종료했습니다: code={code}')
             # 서로 다른 DDS 토픽의 마지막 메시지를 처리할 시간을 둔다.
             if completed_at is None:
                 completed_at = time.monotonic()
@@ -102,16 +110,18 @@ def main(argv=None):
     initialized = False
     result = 1
     try:
-        config_dir = settings()
+        source = 'auto_align' if args.step else 'xarm_motion'
+        config_dir = settings('auto_align_enabled' if args.step else 'standalone_enabled')
         if not sys.stdin.isatty():
             raise ValueError('Enter·Ctrl+C 입력이 가능한 터미널에서 실행하세요.')
         poses = load_yaml(config_dir / 'arm_poses.yaml')
-        named_pose(poses, args.start_pose)
+        if args.start_pose:
+            named_pose(poses, args.start_pose)
         goals = named_pose(poses, args.target_pose)
         frames = load_yaml(config_dir / 'fixed_frames.yaml')['frames']
-        executable = Path(get_package_prefix('xarm_motion')) / 'lib/xarm_motion/xarm_motion'
+        executable = Path(get_package_prefix(source)) / f'lib/{source}/{source}'
         if not executable.is_file():
-            raise FileNotFoundError('xarm_motion을 먼저 빌드하세요.')
+            raise FileNotFoundError(f'{source}을 먼저 빌드하세요.')
         log_dir = config_dir.parent / '_log/simulation_validation'
         log_dir.mkdir(parents=True, exist_ok=True)
         os.environ['ROS_LOG_DIR'] = str(log_dir)
@@ -120,7 +130,7 @@ def main(argv=None):
         rclpy.init(args=[], signal_handler_options=SignalHandlerOptions.NO)
         initialized = True
         sides = ('left', 'right') if args.arm == 'both' else (args.arm,)
-        node = ControlFeedback(sides, frames, goals)
+        node = ControlFeedback(sides, frames, goals, source=source)
         command = ['ros2', 'launch', 'simulation_validation', 'init1.launch.py',
                    'mode:=live_control', f'rviz:={str(not args.no_rviz).lower()}']
         visual = subprocess.Popen(command, stdin=subprocess.DEVNULL, start_new_session=True)
@@ -128,9 +138,10 @@ def main(argv=None):
         if not stopped.is_set():
             node.reset()
             # stdin을 상속해 C++ 실행기의 TTY 확인·Enter·중지 처리를 유지한다.
-            motion = subprocess.Popen([str(executable), '--arm', args.arm,
-                                       '--start-pose', args.start_pose,
-                                       '--target-pose', args.target_pose])
+            motion_args = (['--step', args.step] if args.step else
+                           ['--arm', args.arm, '--start-pose', args.start_pose,
+                            '--target-pose', args.target_pose])
+            motion = subprocess.Popen([str(executable), *motion_args])
             result = supervise(node, motion, visual, stopped)
         else:
             result = 130

@@ -339,6 +339,7 @@ MotionPlan::MotionPlan(const Kinematics& arm, const Joints& actual, const Pose& 
     duration_ *= ratio*1.1;
   }
   require(valid, "경로 속도·가속도 검증에 실패했습니다.");
+  joint_speed_bound_ = derivative / duration_;
 }
 Joints MotionPlan::sample(double fraction) const {
   require(std::isfinite(fraction), "유효한 경로 시각이 필요합니다.");
@@ -438,6 +439,28 @@ void MotionSession::prepare(double now) {
     SdkKinematics kinematics(*arm.backend,*arm.model,arm.flange_T_tcp);
     arm.plan = std::make_unique<MotionPlan>(kinematics, values[i].joints, arm.target,
       arm.flange_T_tcp, limits_);
+    duration_ = std::max(duration_,arm.plan->duration());
+  }
+  prepared_ = true;
+}
+void MotionSession::prepare_planned(double now) {
+  require(!active_, "이동 중에는 경로를 준비할 수 없습니다.");
+  prepared_ = false; duration_ = 0; previous_fraction_ = 0;
+  const auto values = feedback(now);
+  for (size_t i = 0; i < arms_.size(); ++i) {
+    auto& arm = arms_[i];
+    check_cancelled();
+    validate_start(arm, values[i]);
+    require(arm.plan && std::isfinite(arm.plan->duration()) && arm.plan->duration() > 0 &&
+      arm.plan->duration() <= 600, "유효한 사전 계산 경로가 필요합니다.");
+    const auto first = arm.plan->sample(0), last = arm.plan->sample(1);
+    arm.model->check(first); arm.model->check(last);
+    require((first-values[i].joints).cwiseAbs().maxCoeff() <= limits_.arrival_joint,
+      arm.side+": 경로 계산 후 실제 관절각이 바뀌었습니다. 다시 실행하세요.");
+    require(pose_close(arm.plan->flange(0),arm.start,0.0002,0.001) &&
+      pose_close(arm.plan->flange(1),arm.target,0.0002,0.001),
+      arm.side+": 사전 계산 경로의 시작·목표가 다릅니다.");
+    arm.prepared = values[i];
     duration_ = std::max(duration_,arm.plan->duration());
   }
   prepared_ = true;

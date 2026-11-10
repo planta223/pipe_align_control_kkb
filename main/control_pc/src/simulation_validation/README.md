@@ -7,7 +7,7 @@
 | `static_rviz` (기본) | 선택한 자세 행렬을 정적으로 표시 | 없음 | 없음 |
 | `dynamic_rviz` | 선택한 자세 사이의 경로를 화면에서 재생 | 없음 | 없음 |
 | `live_feedback` | 실제 관절각으로 화면 갱신 | 필요 | 없음 |
-| `live_control` | xarm_motion 이동과 실측 시각화 | 필요 | Enter 후 전송 |
+| `live_control` | C++ 제어기 이동과 실측 시각화 | 필요 | Enter 후 전송 |
 
 `live_control`은 `ros2 run simulation_validation live_control`로 실행한다. 팔·시작·목표는 필수이며 같은 터미널의 Enter로 이동한다. `ros2 launch ... mode:=live_control`은 통합 실행기 내부의 시각화 전용 구성이다. 단독 호출은 제어기를 실행하지 않는다.
 전체 명령 모음은 [제어 PC 시각화](../../../../docs/control_pc/README_simulation.md)를 따른다.
@@ -19,6 +19,7 @@
 - 공식 URDF의 회전축·관절 원점·관절 제한으로 KDL 체인을 구성한다. 정적·동적 모드는 SDK나 로봇 접속 없이 계산한다.
 - 카메라는 토르소 고정이다. 현재 장착 변환이 미확인이므로 표시하지 않는다. `camera_mount.parent_T_camera`에 `translation_m`과 `rpy_rad` 또는 `rotation_matrix`를 채우면 축을 표시한다.
 - 시각화 토픽·TF는 `/simulation_validation/` 아래에 둔다. `live_control`에서만 `/xarm_motion/joint_states`·`/xarm_motion/status`를 구독해 실측 관절각과 상태를 전달한다.
+- `live_control --step pre_align_ready`는 `/auto_align/joint_states`·`/auto_align/status`를 사용한다.
 
 ## 공식 모델 준비
 
@@ -137,6 +138,8 @@ ros2 run simulation_validation live_control \
 실측 관절각을 20 Hz로 전달하며 최초 수신 전에는 임의 자세를 넣지 않는다. 목표 flange 축과 제어 상태를 함께 표시한다. 정상 완료 후 제어기는 중지·종료하고 RViz는 마지막 수신 자세와 완료 상태를 유지한다. 이후 실물은 조회하지 않으며 Ctrl+C로 화면을 닫는다. `--no-rviz`는 GUI 없이 같은 연결을 실행한다.
 
 공통 좌표계·자세 파일과 `control.yaml`의 모델 설정을 사용한다. 이동 시간·제한·도착 검사는 기존 제어기에 맡긴다. 통합 실행기·시각화 로그는 `_log/simulation_validation/`, 제어기 로그는 `_log/xarm_motion/`에 저장한다. 빌드와 상세 절차는 [제어 PC 시각화](../../../../docs/control_pc/README_simulation.md)를 따른다.
+
+`auto_align`을 빌드한 뒤 `ros2 run simulation_validation live_control --arm both --step pre_align_ready`로 현재 자세에서 준비 목표까지 실행할 수 있다. 시작·목표 인자는 받지 않으며 `execution.auto_align_enabled=true`가 별도로 필요하다. 전체 SDK 경로와 팔·환경의 기본 20 mm 충돌 여유거리를 검사하고 Enter로 실행한다. 손·파이프·토르소 형상과 자동 우회는 포함하지 않는다. 제어 로그는 `_log/auto_align/`이다.
 
 ## 환경 모델
 

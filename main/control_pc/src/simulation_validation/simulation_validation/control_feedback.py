@@ -14,8 +14,10 @@ from .rviz_joint_states import goal_markers
 
 
 class ControlFeedback(Node):
-    def __init__(self, sides, frames, goals):
+    def __init__(self, sides, frames, goals, source='xarm_motion'):
         super().__init__('control_feedback', namespace='simulation_validation')
+        if source not in ('xarm_motion', 'auto_align'):
+            raise ValueError('지원하지 않는 제어 피드백입니다.')
         self.sides = sides
         self.frames = frames
         self.goals = {side: goals[side] for side in sides}
@@ -29,9 +31,9 @@ class ControlFeedback(Node):
         self.goal_publisher = self.create_publisher(MarkerArray, 'goal_axes', 1)
         self.status_publisher = self.create_publisher(Marker, 'control_status', 1)
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
-        self.create_subscription(JointState, '/xarm_motion/joint_states',
+        self.create_subscription(JointState, f'/{source}/joint_states',
                                  self.receive_feedback, qos_profile_sensor_data)
-        self.create_subscription(String, '/xarm_motion/status', self.receive_status, latched)
+        self.create_subscription(String, f'/{source}/status', self.receive_status, latched)
         self.create_subscription(String, 'robot_description', self.receive_description, latched)
         self.timer = self.create_timer(0.05, self.publish)
 

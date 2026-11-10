@@ -11,7 +11,7 @@
 | `static_rviz` | 이름으로 선택한 자세를 정적으로 표시 | 없음 | 없음 | 구현 |
 | `dynamic_rviz` | 목표까지 이동 또는 여러 자세 사이의 경로를 화면에서 재생 | 없음 | 없음 | 구현 |
 | `live_feedback` | 실제 양팔 관절 피드백을 화면에 반영 | 필요 | 없음 | 구현 |
-| `live_control` | xarm_motion 이동과 실측 피드백 표시 | 필요 | Enter 후 전송 | 구현 |
+| `live_control` | C++ 제어기 이동과 실측 피드백 표시 | 필요 | Enter 후 전송 | 구현 |
 
 `live_control`은 `ros2 run simulation_validation live_control`로 실행한다. 같은 터미널의 입력을 유지하기 위해 시각화 launch와 C++ 제어기를 함께 관리한다.
 
@@ -206,7 +206,22 @@ ros2 run simulation_validation live_control \
 
 `ros2 launch simulation_validation init1.launch.py mode:=live_control`은 통합 실행기 내부의 시각화 전용 구성이다. 이 launch만 실행하면 제어기와 피드백 전달기는 시작하지 않는다. 통합 실행 중 다른 시각화·제어기를 추가 실행하지 않는다.
 
-통합 실행기·시각화 로그는 `_log/simulation_validation/`, 제어기 로그는 `_log/xarm_motion/`에 저장한다. 사용 후 실행 허용을 `false`로 되돌린다. 실물 연동 검증은 사용자가 직접 실행·Enter 입력으로 수행한다.
+일반 자세 이동의 통합 실행기·시각화 로그는 `_log/simulation_validation/`, 제어기 로그는 `_log/xarm_motion/`에 저장한다. 사용 후 실행 허용을 `false`로 되돌린다. 실물 연동 검증은 사용자가 직접 실행·Enter 입력으로 수행한다.
+
+### auto_align의 pre_align_ready 단계
+
+`auto_align`을 [패키지 안내](../../main/control_pc/src/auto_align/README.md)에 따라 빌드하고, `control.yaml`의 `execution.auto_align_enabled`를 파일에서 직접 `true`로 설정한다. 기존 `standalone_enabled`와 별도다.
+teleop·init·다른 팔 제어기를 종료한 뒤 위 환경 설정과 같은 터미널에서 실행한다.
+
+```bash
+ros2 run simulation_validation live_control --arm both --step pre_align_ready
+```
+
+시작·목표 자세 인자는 받지 않는다. 실측 현재 자세가 시작점이고 `arm_poses.yaml`의 `pre_align_ready`가 목표다.
+각 팔의 목표 높이까지 방향·world X·Y를 유지해 수직 이동하고, 방향을 유지하며 목표 X·Y로 이동한 뒤 목표 방향을 맞춘다.
+양팔의 전체 SDK 경로와 충돌 검사를 Enter 전에 완료한다. 충돌 여유거리는 기본 20 mm이며 팔의 자기 충돌·양팔 사이·환경 물체를 검사한다. 손·파이프·토르소는 포함하지 않고 충돌 경로는 거부한다.
+피드백은 `/auto_align/joint_states`·`/auto_align/status`에서 받아 기존 시각화 토픽으로 전달한다. 목표 축과 상태·완료 후 화면 유지 동작은 동일하다. FoundationPose는 실행하지 않는다.
+제어기 로그는 `_log/auto_align/`에 저장한다. 실물 검증은 사용자가 수행하며 사용 후 실행 허용을 `false`로 되돌린다.
 
 ## 실물 init 1 비교 — 필요 시
 

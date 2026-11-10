@@ -1,6 +1,13 @@
-# 단독 실행은 이 값을 직접 바꾼 뒤 다시 시작한다. 실행 옵션으로 덮어쓸 수 없다.
+# 실행 허용은 아래 값을 파일에서 직접 바꾼 뒤 재시작한다. 실행 옵션으로 덮어쓸 수 없다.
 execution:
   standalone_enabled: true
+  auto_align_enabled: false
+
+# 모델에 포함된 팔·환경 사이의 경로 여유거리다. 손·파이프 형상은 포함하지 않는다.
+pre_align_ready:
+  collision_margin_m: 0.02
+  collision_check_interval_s: 0.05
+  collision_minimum_interval_s: 0.0001
 
 robots:
   left:

@@ -137,7 +137,7 @@ ros2 topic echo --once /right/robot/current/base_eef_pose
 
 두 Pipe의 grasp와 기본 자세가 유지되고, 양팔 EEF feedback이 갱신되면 제어 PC 준비 완료다.
 
-자율제어 전환 절차는 아직 미정이다. teleop과 별도 자율제어기를 같은 팔에 동시에 실행하지 않는다.
+준비 이동은 손의 grasp 상태를 유지한 채 teleop·init·다른 팔 제어기를 종료하고 `auto_align`의 `pre_align_ready` 단계로 수동 전환한다. [실행 방법](../control_pc/README_only_control.md)의 준비 이동 항목을 따른다. teleop과 자율제어기를 같은 팔에 동시에 실행하지 않는다. 준비 이동 후 FoundationPose와 미세 정렬의 자동 연결은 아직 구현하지 않았다.
 
 ## 비전 PC — FoundationPose 준비
 

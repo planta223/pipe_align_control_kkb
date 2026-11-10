@@ -102,6 +102,23 @@ class FeedbackTests(unittest.TestCase):
 
 
 class RunnerTests(unittest.TestCase):
+    def test_pre_align_step_uses_current_start_and_fixed_target(self):
+        args = arguments(['--arm', 'both', '--step', 'pre_align_ready'])
+        self.assertIsNone(args.start_pose)
+        self.assertEqual(args.target_pose, 'pre_align_ready')
+        for extra in (['--start-pose', 'init1'], ['--target-pose', 'init1']):
+            with self.subTest(extra=extra), self.assertRaises(SystemExit):
+                arguments(['--arm', 'both', '--step', 'pre_align_ready', *extra])
+        with self.assertRaises(SystemExit):
+            arguments(['--arm', 'left', '--step', 'pre_align_ready'])
+
+    def test_auto_align_gate_is_independent_of_standalone_gate(self):
+        with patch('simulation_validation.live_control.load_yaml', return_value={
+                'execution': {'standalone_enabled': True, 'auto_align_enabled': False}}), \
+                patch('simulation_validation.live_control.subprocess.Popen') as popen:
+            self.assertEqual(main(['--arm', 'both', '--step', 'pre_align_ready']), 1)
+            popen.assert_not_called()
+
     def test_required_arguments_and_no_gate_override(self):
         for argv in ([], ['--arm', 'both'],
                      ['--arm', 'both', '--start-pose', 'init1', '--target-pose', 'init1', '--enabled']):
