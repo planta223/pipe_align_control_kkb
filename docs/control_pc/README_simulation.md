@@ -19,7 +19,7 @@
 
 - 작업 경로: `~/pipe_align_control_kkb`.
 - ROS2 Humble, `simulation_validation`, 공식 `xarm_description`을 사용한다.
-- 빌드·설치·로그·공식 모델 캐시는 `main/control_pc/_colcon/`에 모은다.
+- 빌드·설치·공식 모델 캐시와 colcon 로그는 `main/control_pc/_colcon/`에 모은다. 실행 로그는 `main/control_pc/_log/simulation_validation/`에 저장한다.
 - `live_feedback`에는 현재 ROS Python 환경의 공식 `xarm-python-sdk` 설치와 양팔 네트워크 연결이 필요하다.
 - 아래 시각화 명령은 로봇 이동·모터 활성화·모드 변경을 하지 않는다. 실물 초기 자세 이동은 별도 항목이다.
 
@@ -63,6 +63,7 @@ source /opt/ros/humble/setup.bash
 source main/control_pc/_colcon/install/local_setup.bash
 export ROS_DOMAIN_ID=8
 export ROS_LOCALHOST_ONLY=0
+export ROS_LOG_DIR=~/pipe_align_control_kkb/main/control_pc/_log/simulation_validation
 ros2 launch simulation_validation init1.launch.py mode:=static_rviz pose_name:=init1
 ```
 
@@ -89,6 +90,7 @@ source /opt/ros/humble/setup.bash
 source main/control_pc/_colcon/install/local_setup.bash
 export ROS_DOMAIN_ID=8
 export ROS_LOCALHOST_ONLY=0
+export ROS_LOG_DIR=~/pipe_align_control_kkb/main/control_pc/_log/simulation_validation
 ros2 launch simulation_validation init1.launch.py mode:=dynamic_rviz \
   start_pose:=init1 target_pose:=init1_floor_parallel_v1 duration:=5.0
 ```
@@ -120,6 +122,7 @@ source /opt/ros/humble/setup.bash
 source main/control_pc/_colcon/install/local_setup.bash
 export ROS_DOMAIN_ID=8
 export ROS_LOCALHOST_ONLY=0
+export ROS_LOG_DIR=~/pipe_align_control_kkb/main/control_pc/_log/simulation_validation
 ros2 launch simulation_validation init1.launch.py mode:=live_feedback
 ```
 
@@ -145,6 +148,7 @@ ros2 launch simulation_validation init1.launch.py mode:=live_feedback \
 source /opt/ros/humble/setup.bash
 export ROS_DOMAIN_ID=8
 export ROS_LOCALHOST_ONLY=0
+export ROS_LOG_DIR=~/pipe_align_control_kkb/main/control_pc/_log/simulation_validation
 ros2 topic info -v /simulation_validation/joint_states
 ros2 topic echo --once /simulation_validation/joint_states
 ros2 topic hz /simulation_validation/joint_states

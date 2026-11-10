@@ -12,4 +12,4 @@ keys:
   both: [" "]
 selection_topic: /rohand_selector/selection
 input_device: /dev/input/rohand_foot_pedal
-log_dir: /home/rico/pipe_align_control_kkb/main/control_pc/_colcon/log/rohand_selector
+log_dir: /home/rico/pipe_align_control_kkb/main/control_pc/_log/rohand_selector

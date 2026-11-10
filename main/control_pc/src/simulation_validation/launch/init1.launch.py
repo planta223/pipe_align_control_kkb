@@ -3,7 +3,7 @@ from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, EmitEvent, LogInfo, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, EmitEvent, LogInfo, OpaqueFunction, SetEnvironmentVariable
 from launch.conditions import IfCondition
 from launch.events import Shutdown
 from launch.substitutions import LaunchConfiguration
@@ -77,6 +77,8 @@ def start(context):
 def generate_launch_description():
     share = Path(get_package_share_directory('simulation_validation'))
     return LaunchDescription([
+        SetEnvironmentVariable('ROS_LOG_DIR', str(
+            Path(default_frames_file()).parent.parent / '_log/simulation_validation')),
         DeclareLaunchArgument('mode', default_value='static_rviz', choices=MODES),
         DeclareLaunchArgument('left_ip', default_value='192.168.2.31'),
         DeclareLaunchArgument('right_ip', default_value='192.168.2.32'),

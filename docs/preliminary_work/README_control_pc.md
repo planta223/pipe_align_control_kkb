@@ -113,7 +113,7 @@ ros2 run rohand_selector rohand_selector
 - 키는 선택만 바꾼다. `선택:` 표시를 확인한 뒤 발판으로 닫기/열기를 한다. 선택 변경 시 손별 개폐 상태는 유지된다.
 - 시작 선택은 양손이다. 프로그램 시작 시 자동 개폐하지 않으며, 첫 발판 입력은 닫기다. 재시작하면 내부 개폐 상태는 초기화된다.
 - Ctrl+C는 selector와 자신이 시작한 발판 프로그램만 종료한다. 열기 명령은 보내지 않는다.
-- 키/task 대응은 [selector.yaml](../../main/control_pc/src/rohand_selector/config/selector.yaml), 기존 프로그램의 전체 출력은 `main/control_pc/_colcon/log/rohand_selector/`에 저장한다.
+- 키/task 대응은 [selector.yaml](../../main/control_pc/src/rohand_selector/config/selector.yaml), 기존 프로그램의 전체 출력은 `main/control_pc/_log/rohand_selector/`에 저장한다.
 
 ## 수동 grasping
 
@@ -214,6 +214,7 @@ source /opt/ros/humble/setup.bash
 source main/control_pc/_colcon/install/local_setup.bash
 export ROS_DOMAIN_ID=8
 export ROS_LOCALHOST_ONLY=0
+export ROS_LOG_DIR=~/pipe_align_control_kkb/main/control_pc/_log/simulation_validation
 ros2 launch simulation_validation init1.launch.py mode:=live_feedback
 ```
 

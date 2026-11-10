@@ -90,7 +90,7 @@ SDK FK·IK 조회는 PREPARING 단계에서 끝낸다. FK 경로는 중간점 �
 
 `MEASURE` 로그는 READY·이동 중 1초 간격·완료 시 양팔의 `tcp_pos_mm`, `tcp_rot_deg`, `joint_deg`, `speed_rad_s`를 `실측 오차/허용값[OK 또는 FAIL]`로 표시한다. 속도는 현재 관절 속도의 최댓값이다. `joint_deg`는 최종 목표 관절각과의 최대 차이다. 이동 중 FAIL은 아직 도착 조건을 만족하지 않았다는 뜻이다. 도착 시간 초과 메시지에도 마지막 측정값을 포함한다.
 
-`model_sdk_mm`, `model_sdk_deg`는 같은 실측 관절각에 대한 로컬 FK와 SDK TCP의 차이다. `sdk_plan_mm`, `sdk_plan_deg`는 저장한 SDK 명령 경로와 실측 TCP의 차이다. 비교는 각 팔 base 기준이며, 실제 world 장착 좌표계의 정확성을 보장하지 않는다. 로그는 `_colcon/log/xarm_motion/`에 저장한다.
+`model_sdk_mm`, `model_sdk_deg`는 같은 실측 관절각에 대한 로컬 FK와 SDK TCP의 차이다. `sdk_plan_mm`, `sdk_plan_deg`는 저장한 SDK 명령 경로와 실측 TCP의 차이다. 비교는 각 팔 base 기준이며, 실제 world 장착 좌표계의 정확성을 보장하지 않는다. 로그는 `main/control_pc/_log/xarm_motion/`에 저장한다.
 
 시각화 패키지의 토픽·TF는 변경하지 않는다.
 

@@ -39,4 +39,6 @@ ros2 run xarm_motion xarm_motion \
 - **Ctrl+C**는 선택한 팔 모두에 중지를 요청하고 종료한다. 도착 확인 후에도 중지하고 종료한다.
 - 실제 자세가 시작 조건과 다르거나 제한값 검사를 통과하지 못하면 이동을 거부한다.
 
+실행 로그는 `main/control_pc/_log/xarm_motion/`에 저장한다.
+
 사용 후 `control.yaml`의 `standalone_enabled`를 `false`로 되돌린다.

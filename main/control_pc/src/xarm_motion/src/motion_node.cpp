@@ -120,7 +120,7 @@ int main(int argc, char** argv) {
     }
     struct sigaction action{}; action.sa_handler = handle_signal; sigemptyset(&action.sa_mask);
     sigaction(SIGINT,&action,nullptr); sigaction(SIGTERM,&action,nullptr);
-    const std::string log_dir = (std::filesystem::path(XARM_CONTROL_PC_DIR)/"_colcon/log/xarm_motion").string();
+    const std::string log_dir = (std::filesystem::path(XARM_CONTROL_PC_DIR)/"_log/xarm_motion").string();
     std::filesystem::create_directories(log_dir);
     if (setenv("ROS_LOG_DIR",log_dir.c_str(),1) != 0) throw std::runtime_error("ROS 로그 경로 설정 실패");
     rclcpp::init(0,nullptr,rclcpp::InitOptions(),rclcpp::SignalHandlerOptions::None);

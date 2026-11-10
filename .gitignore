@@ -7,3 +7,8 @@ __pycache__/
 .pytest_cache/
 *.local.yaml
 /main/control_pc/_colcon/
+/main/control_pc/_log/
+/main/vision_pc/_log/*
+!/main/vision_pc/_log/.gitkeep
+/main/vision_pc/_colcon/*
+!/main/vision_pc/_colcon/COLCON_IGNORE
