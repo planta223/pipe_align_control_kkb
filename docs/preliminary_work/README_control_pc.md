@@ -81,21 +81,6 @@ ros2 run rohand rohand_modbus_ap001 --ros-args \
 
 ## 6. 터미널 6 — 손 개폐 발판
 
-처음 한 번 손 선택 wrapper를 빌드한다. 산출물은 `main/control_pc/_colcon/`에 모으며, `legacy`와 비전 코드는 빌드하지 않는다.
-
-```bash
-cd ~/pipe_align_control_kkb
-source /opt/ros/humble/setup.bash
-mkdir -p main/control_pc/_colcon
-touch main/control_pc/_colcon/COLCON_IGNORE
-colcon --log-base main/control_pc/_colcon/log build \
-  --base-paths main/control_pc/src \
-  --packages-select rohand_selector \
-  --build-base main/control_pc/_colcon/build \
-  --install-base main/control_pc/_colcon/install \
-  --symlink-install
-```
-
 기존 발판 프로그램이 켜져 있으면 그 프로그램만 종료한다. 손 드라이버와 teleop은 유지한다.
 
 ```bash
@@ -142,28 +127,12 @@ ros2 topic echo --once /right/robot/current/base_eef_pose
 ## 비전 PC — FoundationPose 준비
 
 제어 PC에서 두 Pipe를 잡고 기본 자세를 마친 후 진행한다.
-소스 확인과 실행 절차 정리는 **비전 PC의 Codex로 진행한다.**
-
-1. 기존 FoundationPose 프로젝트와 실행 환경을 확인한다.
-2. ZED2i 입력을 준비하고 두 Pipe의 pose tracking을 실행한다.
-3. 양쪽 pose 토픽, 좌표계, 단위, timestamp를 확인한다.
-4. 제어 PC에서 두 Pipe의 pose가 수신되는지 확인한다.
-
-터미널별 실행 명령은 비전 PC에서 확인 후 여기에 추가한다.
+소스 확인과 실행 절차 정리는 README_vision_pc.md 를 참고하라.
 
 ## 8. 터미널 8 — 비전 pose 수신 확인
 
 비전 PC에서 [카메라와 FoundationPose](README_vision_pc.md)를 실행하고 두 Pipe tracking을 유지한다.
 아래 명령은 제어 PC의 새 터미널에서 실행한다. 별도 빌드나 구독 프로그램은 필요하지 않다.
-
-### ROS 환경 설정
-
-```bash
-source /opt/ros/humble/setup.bash
-export ROS_DOMAIN_ID=8
-export ROS_LOCALHOST_ONLY=0
-export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-```
 
 ### 양쪽 publisher 확인
 
