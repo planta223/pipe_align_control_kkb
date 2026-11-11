@@ -3,8 +3,12 @@
 첫 단계인 `pre_align_ready`를 C++로 실행한다. FoundationPose 실행과 미세 정렬은 아직 연결하지 않았다.
 
 - `auto_align_node.cpp`: 파일 기반 실행 허용·Enter 실행·Ctrl+C 중지와 실측 피드백을 담당한다.
-- `steps/pre_align_ready.cpp`: 현재 실측 관절각에서 수직 이동 → 수평 이동 → 방향 정렬 경로를 계산한다.
+- `steps/step_01_vertical_move.cpp`: 수직 이동 목표와 `PreAlignReady`의 순서 연결·전체 경로 계산·양팔 시간 동기화를 담당한다.
+- `steps/step_02_horizontal_move.cpp`: 방향·높이를 유지하는 수평 이동 목표를 계산한다.
+- `steps/step_03_orientation_align.cpp`: 최종 방향 정렬 목표로 저장된 base 기준 자세를 사용한다.
 - `collision_checker.cpp`: 공식 URDF 충돌 형상과 RViz 환경 YAML로 모델 충돌·여유거리를 검사한다.
+
+단계별 목표 함수는 `auto_align::pre_align_ready` 네임스페이스로 묶는다. 실행 순서는 파일명 정렬이 아니라 `PreAlignReady`가 01 → 02 → 03으로 명시한다. 세 단계는 기존 `--step pre_align_ready` 한 번으로 실행하며 로그의 `vertical` → `horizontal` → `orientation` 표시는 유지한다.
 
 ## 동작
 

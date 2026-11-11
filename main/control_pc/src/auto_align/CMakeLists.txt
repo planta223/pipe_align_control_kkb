@@ -18,7 +18,11 @@ find_package(orocos_kdl REQUIRED)
 find_package(fcl REQUIRED)
 find_package(assimp REQUIRED)
 
-add_library(auto_align_core SHARED src/collision_checker.cpp src/steps/pre_align_ready.cpp)
+add_library(auto_align_core SHARED
+  src/collision_checker.cpp
+  src/steps/step_01_vertical_move.cpp
+  src/steps/step_02_horizontal_move.cpp
+  src/steps/step_03_orientation_align.cpp)
 target_include_directories(auto_align_core PUBLIC include)
 target_link_libraries(auto_align_core PUBLIC xarm_motion::motion_core Eigen3::Eigen yaml-cpp fcl assimp::assimp)
 ament_target_dependencies(auto_align_core PUBLIC ament_index_cpp urdf kdl_parser orocos_kdl)

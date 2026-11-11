@@ -81,14 +81,21 @@ xm::Pose mounting_transform(const YAML::Node& frames, const std::string& side) {
   matrix.push_back(last);
   return xm::matrix_pose(matrix);
 }
+namespace pre_align_ready {
+xm::Pose vertical_move_target_world(const xm::Pose& current_world, const xm::Pose& target_world) {
+  xm::Pose vertical = current_world;
+  vertical.translation().z() = target_world.translation().z();
+  return vertical;
+}
+}  // namespace pre_align_ready
+
 std::array<xm::Pose,3> ready_waypoints(const xm::Pose& current,
                                     const xm::Pose& target, const xm::Pose& mount) {
   const xm::Pose start_world = mount*current, target_world = mount*target;
-  xm::Pose vertical = start_world;
-  vertical.translation().z() = target_world.translation().z();
-  xm::Pose horizontal = vertical;
-  horizontal.translation() = target_world.translation();
-  return {mount.inverse()*vertical,mount.inverse()*horizontal,target};
+  const xm::Pose vertical = pre_align_ready::vertical_move_target_world(start_world,target_world);
+  const xm::Pose horizontal = pre_align_ready::horizontal_move_target_world(vertical,target_world);
+  return {mount.inverse()*vertical,mount.inverse()*horizontal,
+    pre_align_ready::orientation_align_target_base(target)};
 }
 
 PreAlignReady::PreAlignReady(std::vector<xm::MotionArm>& arms,
