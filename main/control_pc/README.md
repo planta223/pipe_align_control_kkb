@@ -6,7 +6,7 @@
 - `src/simulation_validation/`: 공식 xArm 모델의 정적 자세·동적 경로·실측 관절각 표시와 `live_control` 통합 실행을 담당한다. 환경 설정은 패키지의 `config/environment_models.yaml`에 둔다. [실행 방법](src/simulation_validation/README.md)을 따른다.
 - `config/`: 고정 좌표계 `fixed_frames.yaml`, 양팔 자세 `arm_poses.yaml`, 이동 제한·실행 허용·충돌 여유거리를 정하는 `control.yaml`을 둔다. 좌표계·자세 설정은 시각화에서도 읽는다.
 - `src_external/`: 외부 teleop·Omega7·xArm·RoHand의 경로를 `external_path.yaml`, 실행 설정을 `external_config.yaml`에 기록한다. 외부 소스는 기존 위치에서 참조하며, 두 YAML은 참조용이다.
-- `_log/`: `xarm_motion/`, `auto_align/`, `rohand_selector/`, `simulation_validation/`의 실행 로그와 calibration 기록을 모은다. Git 추적에서 제외한다.
+- `_log/`: `xarm_motion/`, `auto_align/`, `rohand_selector/`, `simulation_validation/`의 실행 로그와 calibration 기록을 모은다. `colcon/`은 `test-result` 조회 자체의 로그다. 결과 조회에도 `--log-base`를 지정해 저장소 루트에 `log/`가 생기지 않도록 한다. Git 추적에서 제외한다.
 - `_colcon/`: 빌드·설치·공식 모델 캐시와 colcon 빌드·테스트 로그를 모은다. 패키지 탐색과 Git 추적에서 제외한다.
 
 실행은 [제어 PC 준비](../../docs/preliminary_work/README_control_pc.md)를 따른다. 저장소 루트에서 selector를 빌드하되 산출물은 `_colcon/`에 저장하며, 외부 프로그램은 기존 위치에서 사용한다.

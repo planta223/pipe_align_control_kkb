@@ -107,7 +107,8 @@ PYTHONDONTWRITEBYTECODE=1 colcon --log-base main/control_pc/_colcon/log test \
   --build-base main/control_pc/_colcon/build \
   --install-base main/control_pc/_colcon/install \
   --event-handlers console_direct+
-colcon test-result --test-result-base main/control_pc/_colcon/build/xarm_motion --verbose
+colcon --log-base main/control_pc/_log/colcon test-result \
+  --test-result-base main/control_pc/_colcon/build/xarm_motion --verbose
 ```
 
 테스트는 공식 모델과 가짜 backend를 사용한다. 실제 SDK 연결·로봇 이동·외부 파일 수정은 하지 않는다.
