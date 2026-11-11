@@ -69,6 +69,8 @@ ros2 run simulation_validation live_control \
 `auto_align`을 [패키지 안내](../../main/control_pc/src/auto_align/README.md)에 따라 빌드한다. teleop·init·다른 팔 제어기를 종료하고 손의 grasp 상태는 유지한다.
 `control.yaml`의 `execution.auto_align_enabled`를 파일에서 직접 `true`로 바꾼다. 기본값은 `false`이며 기존 `standalone_enabled`와 별도다.
 
+준비 목표는 같은 파일의 `pre_align_ready.target_pose`로 선택한다. 현재는 `pre_align_ready_v2`이며, `arm_poses.yaml`에 다른 자세를 추가한 뒤 이 이름만 바꾸면 된다. 설정 변경 후 실행기를 다시 시작한다. 아래 실행 명령은 그대로 사용한다.
+
 ```bash
 cd ~/pipe_align_control_kkb
 source /opt/ros/humble/setup.bash
@@ -81,7 +83,7 @@ ros2 run simulation_validation live_control --arm both --step pre_align_ready
 
 시작 자세 이름은 지정하지 않는다. 현재 방향·world X·Y를 유지하며 각 팔의 준비 목표 높이로 이동하고, 방향을 유지한 채 목표 X·Y로 이동한 뒤 목표 방향을 맞춘다. 양팔은 구간별 시간을 맞춘다.
 제어 주기 지연에 맞춰 양팔의 공통 경로 진행도를 조절한다. 지연 후 감속 여유 때문에 이동 시간이 늘어날 수 있으며, 관절 증분·가속도 제한은 유지한다.
-전체 SDK 경로와 팔·환경의 20 mm 여유거리 검사를 통과하면 `READY`가 나온다. 같은 터미널의 빈 줄 Enter로 한 번 실행한다. 충돌 경로는 거부하며 자동 우회하지 않는다.
+전체 SDK 경로와 팔·환경의 20 mm 여유거리 검사를 통과하면 선택된 목표 이름과 함께 `READY`가 나온다. 같은 터미널의 빈 줄 Enter로 한 번 실행한다. 충돌 경로는 거부하며 자동 우회하지 않는다.
 손·파이프·토르소 형상은 검사하지 않는다. 20 mm는 모델 기준이며 실물 배치·추종 오차를 포함한 안전 보증은 아니다.
 오류·Ctrl+C·완료 시 양팔에 중지를 요청한다. 완료 후 RViz는 마지막 수신 자세를 유지한다. FoundationPose는 자동 실행하지 않는다.
 

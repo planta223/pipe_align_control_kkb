@@ -218,6 +218,7 @@ ros2 run simulation_validation live_control --arm both --step pre_align_ready
 ```
 
 시작·목표 자세 인자는 받지 않는다. 실측 현재 자세가 시작점이고 `arm_poses.yaml`의 `pre_align_ready`가 목표다.
+목표는 `control.yaml`의 `pre_align_ready.target_pose`가 지정한 `arm_poses.yaml` 자세다. 현재는 `pre_align_ready_v2`이며 설정 변경 후 실행기를 다시 시작한다. RViz와 제어기는 같은 목표를 사용한다.
 각 팔의 목표 높이까지 방향·world X·Y를 유지해 수직 이동하고, 방향을 유지하며 목표 X·Y로 이동한 뒤 목표 방향을 맞춘다.
 양팔의 전체 SDK 경로와 충돌 검사를 Enter 전에 완료한다. 충돌 여유거리는 기본 20 mm이며 팔의 자기 충돌·양팔 사이·환경 물체를 검사한다. 손·파이프·토르소는 포함하지 않고 충돌 경로는 거부한다.
 피드백은 `/auto_align/joint_states`·`/auto_align/status`에서 받아 기존 시각화 토픽으로 전달한다. 목표 축과 상태·완료 후 화면 유지 동작은 동일하다. FoundationPose는 실행하지 않는다.

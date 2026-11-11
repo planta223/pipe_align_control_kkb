@@ -139,7 +139,7 @@ ros2 run simulation_validation live_control \
 
 공통 좌표계·자세 파일과 `control.yaml`의 모델 설정을 사용한다. 이동 시간·제한·도착 검사는 기존 제어기에 맡긴다. 통합 실행기·시각화 로그는 `_log/simulation_validation/`, 제어기 로그는 `_log/xarm_motion/`에 저장한다. 빌드와 상세 절차는 [제어 PC 시각화](../../../../docs/control_pc/README_simulation.md)를 따른다.
 
-`auto_align`을 빌드한 뒤 `ros2 run simulation_validation live_control --arm both --step pre_align_ready`로 현재 자세에서 준비 목표까지 실행할 수 있다. 시작·목표 인자는 받지 않으며 `execution.auto_align_enabled=true`가 별도로 필요하다. 전체 SDK 경로와 팔·환경의 기본 20 mm 충돌 여유거리를 검사하고 Enter로 실행한다. 손·파이프·토르소 형상과 자동 우회는 포함하지 않는다. 제어 로그는 `_log/auto_align/`이다.
+`auto_align`을 빌드한 뒤 `ros2 run simulation_validation live_control --arm both --step pre_align_ready`로 현재 자세에서 준비 목표까지 실행할 수 있다. 시작·목표 인자는 받지 않으며 `execution.auto_align_enabled=true`가 별도로 필요하다. 목표는 `control.yaml`의 `pre_align_ready.target_pose`로 선택하고 RViz와 제어기가 함께 사용한다. 전체 SDK 경로와 팔·환경의 기본 20 mm 충돌 여유거리를 검사하고 Enter로 실행한다. 손·파이프·토르소 형상과 자동 우회는 포함하지 않는다. 제어 로그는 `_log/auto_align/`이다.
 
 ## 환경 모델
 

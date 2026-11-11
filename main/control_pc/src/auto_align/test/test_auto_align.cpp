@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <tuple>
 
 namespace aa = auto_align;
 namespace xm = xarm_motion;
@@ -82,6 +83,44 @@ TEST(Configuration, ClearanceAndTimeParametersAreValidated) {
   control["pre_align_ready"]["collision_minimum_interval_s"] = .2;
   EXPECT_THROW(aa::collision_settings(control),std::runtime_error);
 }
+TEST(Configuration, ReadyTargetSelectsBothArmsFromConfiguredName) {
+  auto control = YAML::LoadFile((root/"config/control.yaml").string());
+  auto coordinates = YAML::LoadFile((root/"config/arm_poses.yaml").string());
+  coordinates["poses"]["future_ready"] = YAML::Clone(coordinates["poses"]["pre_align_ready_v2"]);
+  coordinates["poses"]["future_ready"]["left"]["base_T_flange"][0][3] = .4;
+  for (const std::string name : {"pre_align_ready","pre_align_ready_v2","future_ready"}) {
+    control["pre_align_ready"]["target_pose"] = name;
+    const auto target = aa::ready_target(control,coordinates);
+    EXPECT_EQ(target.name,name);
+    EXPECT_LT((target.flange[0].matrix()-xm::named_pose(coordinates,name,"left").matrix()).norm(),1e-12);
+    EXPECT_LT((target.flange[1].matrix()-xm::named_pose(coordinates,name,"right").matrix()).norm(),1e-12);
+  }
+}
+TEST(Configuration, ReadyTargetRejectsMissingUnknownOrMalformedBeforePlanning) {
+  const auto coordinates = YAML::LoadFile((root/"config/arm_poses.yaml").string());
+  for (const std::string value : {"null","false","3","[]","{}","''","' '","unknown"}) {
+    const auto control = YAML::Load("pre_align_ready: {target_pose: "+value+"}");
+    EXPECT_ANY_THROW(aa::ready_target(control,coordinates)) << value;
+  }
+  EXPECT_ANY_THROW(aa::ready_target(YAML::Load("{}"),coordinates));
+  const auto control = YAML::Load("pre_align_ready: {target_pose: pre_align_ready_v2}");
+  for (const auto& side : {"left","right"}) {
+    auto broken = YAML::Clone(coordinates);
+    broken["poses"]["pre_align_ready_v2"].remove(side);
+    EXPECT_ANY_THROW(aa::ready_target(control,broken));
+    broken = YAML::Clone(coordinates);
+    broken["poses"]["pre_align_ready_v2"][side]["base_T_flange"][0][0] = ".nan";
+    EXPECT_ANY_THROW(aa::ready_target(control,broken));
+  }
+}
+TEST(Configuration, InputFingerprintMatchesPythonAndDetectsEitherFileChanging) {
+  EXPECT_EQ(aa::input_fingerprint("",""),"08328807b4eb6fed");
+  EXPECT_EQ(aa::input_fingerprint("control","poses"),"feeec3e03e80b89c");
+  EXPECT_EQ(aa::input_fingerprint("목표","poses"),"fe6319ad788cbf87");
+  EXPECT_NE(aa::input_fingerprint("control2","poses"),aa::input_fingerprint("control","poses"));
+  EXPECT_NE(aa::input_fingerprint("control","poses2"),aa::input_fingerprint("control","poses"));
+  EXPECT_NE(aa::input_fingerprint("ab","c"),aa::input_fingerprint("a","bc"));
+}
 TEST(Waypoints, WorldVerticalThenHorizontalThenOrientationWorksWithTiltedMount) {
   const auto frames = YAML::LoadFile((root/"config/fixed_frames.yaml").string());
   for (const auto& side : {"left","right"}) {
@@ -156,12 +195,15 @@ right_wall: {enabled: true, length_m: 0.8, height_m: 2.0, thickness_m: 0.01, gap
   auto hidden = YAML::Clone(input); hidden["blind"]["enabled"] = false;
   EXPECT_EQ(aa::environment_boxes(hidden).size(),2u);
 }
-class PreAlignTiming : public ::testing::TestWithParam<bool> {};
+class PreAlignTiming : public ::testing::TestWithParam<std::tuple<bool,bool>> {};
 TEST_P(PreAlignTiming, EntireSequenceKeepsCheckedPathAndLimitsWithoutRuntimeFkOrIk) {
   xm::ArmKinematics model(official_model());
   const auto frames = YAML::LoadFile((root/"config/fixed_frames.yaml").string());
   const auto coordinates = YAML::LoadFile((root/"config/arm_poses.yaml").string());
   const auto constraints = limits(); double clock = 100;
+  auto control = YAML::LoadFile((root/"config/control.yaml").string());
+  control["pre_align_ready"]["target_pose"] = std::get<1>(GetParam()) ? "pre_align_ready_v2" : "pre_align_ready";
+  const auto target = aa::ready_target(control,coordinates);
   FakeBackend left(model,xm::tcp_transform(frames,"left"),seed(),clock);
   FakeBackend right(model,xm::tcp_transform(frames,"right"),seed(true),clock);
   std::vector<xm::MotionArm> arms;
@@ -170,7 +212,7 @@ TEST_P(PreAlignTiming, EntireSequenceKeepsCheckedPathAndLimitsWithoutRuntimeFkOr
     auto* backend = side == 0 ? &left : &right;
     const auto value = backend->read();
     arms.push_back({name,backend,&model,backend->tcp,value.base_T_tcp*backend->tcp.inverse(),
-      xm::named_pose(coordinates,"pre_align_ready",name),value,nullptr});
+      target.flange[side],value,nullptr});
   }
   aa::PreAlignReady step(arms,{aa::mounting_transform(frames,"left"),aa::mounting_transform(frames,"right")},constraints,[]{return false;});
   const double duration = arms[0].plan->duration();
@@ -208,7 +250,7 @@ TEST_P(PreAlignTiming, EntireSequenceKeepsCheckedPathAndLimitsWithoutRuntimeFkOr
   bool adjusted = false;
   const double began = clock;
   for (int i = 0; i < 61000; ++i) {
-    const double dt = GetParam() ? intervals[i%intervals.size()] : .01;
+    const double dt = std::get<0>(GetParam()) ? intervals[i%intervals.size()] : .01;
     clock += dt;
     done = session.tick(clock);
     const double progress = session.path_elapsed();
@@ -235,9 +277,9 @@ TEST_P(PreAlignTiming, EntireSequenceKeepsCheckedPathAndLimitsWithoutRuntimeFkOr
   }
   EXPECT_TRUE(phases[0] && phases[1] && phases[2]);
   EXPECT_NEAR(session.path_elapsed(),duration,1e-9);
-  if (GetParam()) { EXPECT_TRUE(adjusted); EXPECT_GT(clock-began,session.duration()); }
+  if (std::get<0>(GetParam())) { EXPECT_TRUE(adjusted); EXPECT_GT(clock-began,session.duration()); }
   EXPECT_TRUE(done); EXPECT_EQ(left.fk_calls+right.fk_calls,calls);
   EXPECT_GT(left.stops,0); EXPECT_GT(right.stops,0);
 }
 
-INSTANTIATE_TEST_SUITE_P(Scheduler,PreAlignTiming,::testing::Bool());
+INSTANTIATE_TEST_SUITE_P(Scheduler,PreAlignTiming,::testing::Combine(::testing::Bool(),::testing::Bool()));

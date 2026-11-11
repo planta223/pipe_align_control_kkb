@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 import time
+import yaml
 
 from ament_index_python.packages import get_package_prefix
 import rclpy
@@ -41,10 +42,26 @@ def arguments(argv):
     if args.step:
         if args.arm != 'both' or args.start_pose or args.target_pose:
             parser.error('pre_align_ready는 --arm both를 사용하며 시작·목표 자세 인자를 받지 않습니다.')
-        args.target_pose = 'pre_align_ready'
     elif not args.start_pose or not args.target_pose:
         parser.error('--start-pose와 --target-pose는 모두 필수입니다.')
     return args
+
+
+def ready_target(control, poses):
+    step = control.get('pre_align_ready') if isinstance(control, dict) else None
+    name = step.get('target_pose') if isinstance(step, dict) else None
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError('pre_align_ready.target_pose에 arm_poses.yaml의 목표 이름이 필요합니다.')
+    return name, named_pose(poses, name)
+
+
+def input_fingerprint(control, poses):
+    # C++와 같은 FNV-1a로 시각화와 제어기 사이의 설정 변경을 검출한다.
+    value = 14695981039346656037
+    for block in (control, b'\0', poses, b'\0'):
+        for byte in block:
+            value = ((value ^ byte) * 1099511628211) & 0xffffffffffffffff
+    return f'{value:016x}'
 
 
 def stop_process(process, group=False):
@@ -116,10 +133,17 @@ def main(argv=None):
         config_dir = settings('auto_align_enabled' if args.step else 'standalone_enabled')
         if not sys.stdin.isatty():
             raise ValueError('Enter·Ctrl+C 입력이 가능한 터미널에서 실행하세요.')
-        poses = load_yaml(config_dir / 'arm_poses.yaml')
+        expected_inputs = None
+        if args.step:
+            control_data = (config_dir / 'control.yaml').read_bytes()
+            poses_data = (config_dir / 'arm_poses.yaml').read_bytes()
+            args.target_pose, goals = ready_target(yaml.safe_load(control_data), yaml.safe_load(poses_data))
+            expected_inputs = input_fingerprint(control_data, poses_data)
+        else:
+            poses = load_yaml(config_dir / 'arm_poses.yaml')
+            goals = named_pose(poses, args.target_pose)
         if args.start_pose:
             named_pose(poses, args.start_pose)
-        goals = named_pose(poses, args.target_pose)
         frames = load_yaml(config_dir / 'fixed_frames.yaml')['frames']
         executable = Path(get_package_prefix(source)) / f'lib/{source}/{source}'
         if not executable.is_file():
@@ -140,7 +164,7 @@ def main(argv=None):
         if not stopped.is_set():
             node.reset()
             # stdin을 상속해 C++ 실행기의 TTY 확인·Enter·중지 처리를 유지한다.
-            motion_args = (['--step', args.step] if args.step else
+            motion_args = (['--step', args.step, '--expected-inputs', expected_inputs] if args.step else
                            ['--arm', args.arm, '--start-pose', args.start_pose,
                             '--target-pose', args.target_pose])
             motion = subprocess.Popen([str(executable), *motion_args])

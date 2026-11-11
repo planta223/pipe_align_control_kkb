@@ -1,5 +1,8 @@
 #include "auto_align/steps/pre_align_ready.hpp"
 #include <cmath>
+#include <cstdint>
+#include <iomanip>
+#include <sstream>
 
 namespace auto_align {
 namespace {
@@ -53,6 +56,25 @@ void require_execution_enabled(const YAML::Node& control) {
   require(value && value.IsScalar() && value.Tag() != "!" &&
     value.Tag() != "tag:yaml.org,2002:str" && value.Scalar() == "true",
     "auto_align 실행이 비활성화됐습니다. control.yaml의 execution.auto_align_enabled를 파일에서 직접 true로 바꾸세요.");
+}
+ReadyTarget ready_target(const YAML::Node& control, const YAML::Node& coordinates) {
+  const auto value = control["pre_align_ready"]["target_pose"];
+  require(value && value.IsScalar() && !value.IsNull() &&
+    value.Scalar().find_first_not_of(" \t\r\n") != std::string::npos,
+    "pre_align_ready.target_pose에 arm_poses.yaml의 목표 이름이 필요합니다.");
+  const auto name = value.as<std::string>();
+  return {name,{xm::named_pose(coordinates,name,"left"),xm::named_pose(coordinates,name,"right")}};
+}
+std::string input_fingerprint(const std::string& control, const std::string& coordinates) {
+  // FNV-1a는 설정 일치 확인용이며 보안 서명으로 사용하지 않는다.
+  std::uint64_t hash = 14695981039346656037ULL;
+  for (const auto* text : {&control,&coordinates}) {
+    for (unsigned char byte : *text) { hash ^= byte; hash *= 1099511628211ULL; }
+    hash *= 1099511628211ULL; // 파일 사이의 NUL 구분자
+  }
+  std::ostringstream result;
+  result << std::hex << std::setfill('0') << std::setw(16) << hash;
+  return result.str();
 }
 CollisionSettings collision_settings(const YAML::Node& control) {
   CollisionSettings settings;

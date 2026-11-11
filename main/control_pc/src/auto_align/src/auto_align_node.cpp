@@ -10,7 +10,9 @@
 #include <csignal>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <sstream>
 #include <thread>
 
 namespace aa = auto_align;
@@ -20,9 +22,17 @@ volatile std::sig_atomic_t interrupted = 0;
 void handle_signal(int) { interrupted = 1; }
 constexpr const char* usage =
   "사용법: ros2 run auto_align auto_align --step pre_align_ready\n"
-  "control.yaml의 execution.auto_align_enabled=true가 필요합니다. 현재 양팔 자세에서 준비 목표로 이동합니다.\n";
+  "control.yaml의 execution.auto_align_enabled=true가 필요합니다. pre_align_ready.target_pose를 목표로 사용합니다.\n";
 void require(bool condition, const std::string& message) {
   if (!condition) throw std::runtime_error(message);
+}
+std::string read_file(const std::filesystem::path& path) {
+  std::ifstream file(path,std::ios::binary);
+  require(file.good(),"설정 파일을 읽을 수 없습니다: "+path.string());
+  std::ostringstream text;
+  text << file.rdbuf();
+  require(!file.bad(),"설정 파일 읽기 실패: "+path.string());
+  return text.str();
 }
 bool enter_pressed() {
   pollfd fd{STDIN_FILENO,POLLIN,0};
@@ -89,15 +99,23 @@ int main(int argc, char** argv) {
   std::vector<std::unique_ptr<xm::XArmBackend>> backends;
   int result = 0;
   try {
-    require(argc == 3 && std::string(argv[1]) == "--step" && std::string(argv[2]) == "pre_align_ready",usage);
+    require((argc == 3 || argc == 5) && std::string(argv[1]) == "--step" &&
+      std::string(argv[2]) == "pre_align_ready" &&
+      (argc == 3 || std::string(argv[3]) == "--expected-inputs"),usage);
     const auto root = std::filesystem::path(AUTO_ALIGN_CONTROL_PC_DIR);
-    const auto control = YAML::LoadFile((root/"config/control.yaml").string());
+    const auto control_text = read_file(root/"config/control.yaml");
+    const auto control = YAML::Load(control_text);
     aa::require_execution_enabled(control); // SDK 생성·접속보다 먼저 파일 허용값을 검사한다.
+    const auto coordinates_text = read_file(root/"config/arm_poses.yaml");
+    if (argc == 5)
+      require(aa::input_fingerprint(control_text,coordinates_text) == argv[4],
+        "시각화 준비 중 control.yaml 또는 arm_poses.yaml이 바뀌었습니다. 다시 실행하세요.");
+    const auto coordinates = YAML::Load(coordinates_text);
+    const auto target = aa::ready_target(control,coordinates);
     const auto config = xm::read_config(control);
     const auto collision_config = aa::collision_settings(control);
     require(isatty(STDIN_FILENO),"Enter·Ctrl+C 입력이 가능한 터미널에서 실행하세요.");
     const auto frames = YAML::LoadFile((root/"config/fixed_frames.yaml").string());
-    const auto coordinates = YAML::LoadFile((root/"config/arm_poses.yaml").string());
     const std::string visualization_share = ament_index_cpp::get_package_share_directory("simulation_validation");
     const auto environment = YAML::LoadFile(visualization_share+"/config/environment_models.yaml");
     require(environment["frame_id"].as<std::string>() == frames["frames"]["base"].as<std::string>(),
@@ -119,7 +137,7 @@ int main(int argc, char** argv) {
     monitor = std::make_shared<Monitor>(frames);
     const auto cancelled = [] { return interrupted != 0 || !rclcpp::ok(); };
     std::vector<xm::MotionArm> arms;
-    monitor->status("PREPARING: pre_align_ready / 현재 자세 조회");
+    monitor->status("PREPARING: pre_align_ready / 목표 "+target.name+" / 현재 자세 조회");
     for (size_t i = 0; i < 2; ++i) {
       const std::string side = i == 0 ? "left" : "right";
       const auto tcp = xm::tcp_transform(frames,side);
@@ -130,7 +148,7 @@ int main(int argc, char** argv) {
       require(actual.velocities.allFinite() && actual.velocities.cwiseAbs().maxCoeff() <= config.limits.stationary_speed,
         side+": 로봇이 정지 상태가 아닙니다.");
       arms.push_back({side,backends.back().get(),models[i].get(),tcp,actual.base_T_tcp*tcp.inverse(),
-        xm::named_pose(coordinates,"pre_align_ready",side),actual,nullptr});
+        target.flange[i],actual,nullptr});
     }
     checker.check({arms[0].prepared.joints,arms[1].prepared.joints});
     monitor->status("PREPARING: vertical → horizontal → orientation / 전체 SDK 경로 계산");
@@ -143,7 +161,7 @@ int main(int argc, char** argv) {
     },duration,{arms[0].plan->joint_speed_bound(),arms[1].plan->joint_speed_bound()},cancelled);
     xm::MotionSession session(std::move(arms),config.limits,cancelled);
     session.prepare_planned(xm::steady_seconds());
-    monitor->status("READY: pre_align_ready / 충돌 여유 "+std::to_string(collision_config.margin*1000)+
+    monitor->status("READY: pre_align_ready / 목표 "+target.name+" / 충돌 여유 "+std::to_string(collision_config.margin*1000)+
       "mm / 예상 "+std::to_string(session.duration())+"초 / Enter로 실행");
     monitor->diagnostics(session.diagnostics());
     while (!cancelled()) {

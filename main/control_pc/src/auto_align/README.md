@@ -12,7 +12,14 @@
 
 ## 동작
 
-양팔을 함께 사용하며 시작 자세 이름은 받지 않는다. `arm_poses.yaml`의 `pre_align_ready`가 목표다.
+양팔을 함께 사용하며 시작 자세 이름은 받지 않는다. `control.yaml`의 `pre_align_ready.target_pose`로 `arm_poses.yaml`의 목표 이름을 선택한다. 현재 선택은 `pre_align_ready_v2`이며 기존 `pre_align_ready`도 보존한다.
+
+```yaml
+pre_align_ready:
+  target_pose: pre_align_ready_v2
+```
+
+기존 `pre_align_ready` 아래의 충돌 검사 설정과 함께 사용한다. 다른 자세를 추가한 뒤 목표 이름만 바꾸면 같은 세 단계로 이동한다. 누락·미등록 목표·잘못된 양팔 행렬은 로봇 연결 전에 거부한다. 실행 시 목표를 읽어 고정하므로 변경 후에는 실행기를 다시 시작한다. YAML 변경만으로 재빌드할 필요는 없다.
 각 팔의 world X·Y와 flange 방향을 유지하며 해당 팔의 목표 높이로 이동하고, 방향을 유지하며 목표 X·Y로 이동한 뒤 최단 회전으로 목표 방향에 맞춘다.
 각 구간은 양팔 중 더 긴 시간에 맞추며, 구간 사이에는 기존 도착 유지 시간만큼 목표 관절각을 유지한다. 최종 도착은 기존 위치·방향·관절·정지 속도 조건으로 확인한다.
 
@@ -57,6 +64,8 @@ ros2 run simulation_validation live_control --arm both --step pre_align_ready
 ```
 
 완료 후 RViz는 마지막 수신 자세를 유지한다. Ctrl+C로 닫는다.
+
+RViz와 제어기는 같은 설정 목표를 사용하며 `READY`에 선택된 이름을 표시한다. 시각화 시작과 제어기 시작 사이에 `control.yaml` 또는 `arm_poses.yaml` 내용이 바뀌면 연결 전에 거부한다. 내부 `--expected-inputs` 인자는 이 일치 확인용이며 목표나 실행 허용을 덮어쓰지 않는다.
 
 `READY` 후 빈 줄 Enter로 한 번 실행한다. 경로 계산 후 실제 관절각이 바뀌면 거부한다.
 오류·Ctrl+C·완료 시 양팔에 중지를 요청한다. 오류 원인은 SDK 연결 해제 대기 전에 발행하며, 시각화도 해당 원인을 표시한다. 가능한 명령을 찾지 못하면 관절 번호·증분/가속도·허용값·실제 주기를 기록하고 중지한다. FoundationPose는 자동 실행하지 않는다.

@@ -10,6 +10,13 @@ xm::Pose orientation_align_target_base(const xm::Pose& target_base);
 }  // namespace pre_align_ready
 
 void require_execution_enabled(const YAML::Node& control);
+struct ReadyTarget {
+  std::string name;
+  std::array<xm::Pose,2> flange;
+};
+ReadyTarget ready_target(const YAML::Node& control, const YAML::Node& coordinates);
+// 시각화와 제어기가 서로 다른 설정 파일 내용을 사용하면 연결 전에 거부한다.
+std::string input_fingerprint(const std::string& control, const std::string& coordinates);
 CollisionSettings collision_settings(const YAML::Node& control);
 xm::Pose mounting_transform(const YAML::Node& frames, const std::string& side);
 std::array<xm::Pose,3> ready_waypoints(const xm::Pose& current,

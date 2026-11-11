@@ -4,7 +4,10 @@ import signal
 import subprocess
 import threading
 import time
+import copy
+import tempfile
 import unittest
+import yaml
 from unittest.mock import Mock, patch
 
 from launch import LaunchContext
@@ -18,7 +21,7 @@ from std_msgs.msg import String
 from simulation_validation.control_feedback import ControlFeedback
 from simulation_validation.kinematics import named_pose
 from simulation_validation.live_control import (
-    arguments, main, stop_process, supervise, wait_for_visualization,
+    arguments, input_fingerprint, main, ready_target, stop_process, supervise, wait_for_visualization,
 )
 from simulation_validation.model import default_frames_file, load_yaml
 
@@ -109,15 +112,96 @@ class FeedbackTests(unittest.TestCase):
 
 
 class RunnerTests(unittest.TestCase):
-    def test_pre_align_step_uses_current_start_and_fixed_target(self):
+    def test_pre_align_step_uses_current_start_and_configured_target(self):
         args = arguments(['--arm', 'both', '--step', 'pre_align_ready'])
         self.assertIsNone(args.start_pose)
-        self.assertEqual(args.target_pose, 'pre_align_ready')
+        self.assertIsNone(args.target_pose)
         for extra in (['--start-pose', 'init1'], ['--target-pose', 'init1']):
             with self.subTest(extra=extra), self.assertRaises(SystemExit):
                 arguments(['--arm', 'both', '--step', 'pre_align_ready', *extra])
         with self.assertRaises(SystemExit):
             arguments(['--arm', 'left', '--step', 'pre_align_ready'])
+
+    def test_ready_target_switches_both_visualization_goals(self):
+        poses = load_yaml(Path(default_frames_file()).with_name('arm_poses.yaml'))
+        poses['poses']['future_ready'] = copy.deepcopy(poses['poses']['pre_align_ready_v2'])
+        poses['poses']['future_ready']['left']['base_T_flange'][0][3] = .4
+        for name in ('pre_align_ready', 'pre_align_ready_v2', 'future_ready'):
+            selected, goals = ready_target({'pre_align_ready': {'target_pose': name}}, poses)
+            self.assertEqual(selected, name)
+            for side in ('left', 'right'):
+                self.assertAlmostEqual(goals[side].p.x(), poses['poses'][name][side]['base_T_flange'][0][3])
+        for name in (None, False, 3, [], {}, '', ' ', 'unknown'):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                ready_target({'pre_align_ready': {'target_pose': name}}, poses)
+        broken = copy.deepcopy(poses)
+        del broken['poses']['pre_align_ready_v2']['right']
+        with self.assertRaises(ValueError):
+            ready_target({'pre_align_ready': {'target_pose': 'pre_align_ready_v2'}}, broken)
+
+    def test_input_fingerprint_matches_cpp(self):
+        self.assertEqual(input_fingerprint(b'', b''), '08328807b4eb6fed')
+        self.assertEqual(input_fingerprint(b'control', b'poses'), 'feeec3e03e80b89c')
+        self.assertEqual(input_fingerprint('목표'.encode(), b'poses'), 'fe6319ad788cbf87')
+        self.assertNotEqual(input_fingerprint(b'ab', b'c'), input_fingerprint(b'a', b'bc'))
+
+    def test_invalid_target_never_starts_visualization_or_controller(self):
+        parent = Path(default_frames_file()).parents[1] / '_colcon/build/simulation_validation'
+        parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=parent) as tmp:
+            config = Path(tmp)
+            poses = load_yaml(Path(default_frames_file()).with_name('arm_poses.yaml'))
+            for invalid in ('unknown', 'missing_right', 'bad_matrix'):
+                broken = copy.deepcopy(poses)
+                if invalid != 'unknown':
+                    broken['poses'][invalid] = copy.deepcopy(poses['poses']['pre_align_ready_v2'])
+                    if invalid == 'missing_right':
+                        del broken['poses'][invalid]['right']
+                    else:
+                        broken['poses'][invalid]['left']['base_T_flange'][0][0] = float('nan')
+                (config / 'control.yaml').write_text(yaml.safe_dump({'pre_align_ready': {'target_pose': invalid}}))
+                (config / 'arm_poses.yaml').write_text(yaml.safe_dump(broken))
+                with self.subTest(invalid=invalid), patch('simulation_validation.live_control.settings', return_value=config), \
+                        patch('simulation_validation.live_control.sys.stdin.isatty', return_value=True), \
+                        patch('simulation_validation.live_control.subprocess.Popen') as popen:
+                    self.assertEqual(main(['--arm', 'both', '--step', 'pre_align_ready']), 1)
+                    popen.assert_not_called()
+
+    def test_runner_uses_selected_goal_and_checks_controller_inputs(self):
+        source = Path(default_frames_file()).parent
+        parent = source.parent / '_colcon/build/simulation_validation'
+        parent.mkdir(parents=True, exist_ok=True)
+        for target in ('pre_align_ready', 'pre_align_ready_v2'):
+            with self.subTest(target=target), tempfile.TemporaryDirectory(dir=parent) as tmp:
+                config = Path(tmp) / 'config'
+                config.mkdir()
+                control = load_yaml(source / 'control.yaml')
+                control['pre_align_ready']['target_pose'] = target
+                (config / 'control.yaml').write_text(yaml.safe_dump(control))
+                for filename in ('arm_poses.yaml', 'fixed_frames.yaml'):
+                    (config / filename).write_bytes((source / filename).read_bytes())
+                executable = Path(tmp) / 'lib/auto_align/auto_align'
+                executable.parent.mkdir(parents=True)
+                executable.touch()
+                expected = input_fingerprint((config / 'control.yaml').read_bytes(),
+                                             (config / 'arm_poses.yaml').read_bytes())
+                with patch('simulation_validation.live_control.settings', return_value=config), \
+                        patch('simulation_validation.live_control.sys.stdin.isatty', return_value=True), \
+                        patch('simulation_validation.live_control.get_package_prefix', return_value=tmp), \
+                        patch('simulation_validation.live_control.ControlFeedback') as feedback, \
+                        patch('simulation_validation.live_control.subprocess.Popen') as popen, \
+                        patch('simulation_validation.live_control.wait_for_visualization'), \
+                        patch('simulation_validation.live_control.supervise', return_value=0), \
+                        patch('simulation_validation.live_control.stop_process'), \
+                        patch('simulation_validation.live_control.rclpy.init'), \
+                        patch('simulation_validation.live_control.rclpy.shutdown'):
+                    self.assertEqual(main(['--arm', 'both', '--step', 'pre_align_ready']), 0)
+                    self.assertEqual(popen.call_args_list[1].args[0],
+                                     [str(executable), '--step', 'pre_align_ready', '--expected-inputs', expected])
+                    goals = feedback.call_args.args[2]
+                    coordinates = load_yaml(config / 'arm_poses.yaml')['poses'][target]
+                    for side in ('left', 'right'):
+                        self.assertAlmostEqual(goals[side].p.x(), coordinates[side]['base_T_flange'][0][3])
 
     def test_auto_align_gate_is_independent_of_standalone_gate(self):
         with patch('simulation_validation.live_control.load_yaml', return_value={
