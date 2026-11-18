@@ -22,8 +22,8 @@ robots:
 # 외부 native Cartesian 제어기의 기본값이다.
 limits:
   control_rate_hz: 100.0
-  linear_speed_m_s: 0.02
-  angular_speed_rad_s: 0.2
+  linear_speed_m_s: 0.08
+  angular_speed_rad_s: 0.4
   position_tracking_error_m: 0.005
   orientation_tracking_error_rad: 0.1
   # 외부 JointRamp의 계수·주기 상한·추종 오차다.
