@@ -10,6 +10,7 @@ find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(urdf REQUIRED)
@@ -22,15 +23,19 @@ add_library(auto_align_core SHARED
   src/collision_checker.cpp
   src/steps/step_01_vertical_move.cpp
   src/steps/step_02_horizontal_move.cpp
-  src/steps/step_03_orientation_align.cpp)
+  src/steps/step_03_orientation_align.cpp
+  src/steps/step_04_vision_measure.cpp
+  src/steps/step_05_rotation_align.cpp
+  src/steps/step_06_translation_align.cpp
+  src/steps/step_07_vision_verify.cpp)
 target_include_directories(auto_align_core PUBLIC include)
 target_link_libraries(auto_align_core PUBLIC xarm_motion::motion_core Eigen3::Eigen yaml-cpp fcl assimp::assimp)
 ament_target_dependencies(auto_align_core PUBLIC ament_index_cpp urdf kdl_parser orocos_kdl)
 
-add_executable(auto_align_node src/auto_align_node.cpp)
+add_executable(auto_align_node src/auto_align_node.cpp src/vision_align_node.cpp)
 set_target_properties(auto_align_node PROPERTIES OUTPUT_NAME auto_align)
 target_link_libraries(auto_align_node auto_align_core xarm_motion::xarm_backend)
-ament_target_dependencies(auto_align_node ament_index_cpp rclcpp sensor_msgs geometry_msgs std_msgs)
+ament_target_dependencies(auto_align_node ament_index_cpp rclcpp sensor_msgs geometry_msgs std_msgs visualization_msgs)
 get_filename_component(CONTROL_PC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../.." REALPATH)
 target_compile_definitions(auto_align_node PRIVATE AUTO_ALIGN_CONTROL_PC_DIR="${CONTROL_PC_DIR}")
 install(TARGETS auto_align_core DESTINATION lib)
@@ -39,8 +44,14 @@ install(FILES README.md DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
+  find_package(ament_cmake_pytest REQUIRED)
   ament_add_gtest(test_auto_align test/test_auto_align.cpp)
   target_link_libraries(test_auto_align auto_align_core)
   target_compile_definitions(test_auto_align PRIVATE TEST_CONTROL_PC_DIR="${CONTROL_PC_DIR}")
+  ament_add_gtest(test_vision_align test/test_vision_align.cpp)
+  target_link_libraries(test_vision_align auto_align_core)
+  target_compile_definitions(test_vision_align PRIVATE TEST_CONTROL_PC_DIR="${CONTROL_PC_DIR}")
+  ament_add_pytest_test(test_vision_runtime test/test_vision_runtime.py TIMEOUT 60
+    ENV AUTO_ALIGN_TEST_EXE=$<TARGET_FILE:auto_align_node> PYTHONDONTWRITEBYTECODE=1)
 endif()
 ament_package()

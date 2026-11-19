@@ -129,6 +129,7 @@ struct MotionArm {
 // SDK와 터미널 입력을 분리해 연결 없는 테스트에서도 실행 순서를 검증한다.
 class MotionSession {
 public:
+  using StartPathValidator = std::function<void(const std::vector<MotionArm>&,double)>;
   MotionSession(std::vector<MotionArm> arms, Limits limits, std::function<bool()> cancelled,
                 std::function<double()> clock = steady_seconds);
   ~MotionSession();
@@ -137,11 +138,17 @@ public:
   // 외부 단계가 미리 계산·검사한 경로를 사용한다. 시작점은 실측으로 재검사한다.
   void prepare_planned(double now);
   void begin(double now);
+  // Invoked before enable if measured joints require a new start connection.
+  // Collision-aware callers must check the connected path here as well.
+  void set_start_path_validator(StartPathValidator validator) { start_validator_ = std::move(validator); }
   bool tick(double now);
   void stop();
   double duration() const { return duration_; }
   // 실제 경과 시간과 분리한, 검사된 경로상의 진행 시간이다.
-  double path_elapsed() const { return previous_fraction_*path_duration_; }
+  double path_elapsed() const { return std::max(0.0,previous_fraction_*path_duration_-start_connection_); }
+  double start_connection_duration() const {
+    return path_duration_>0 ? start_connection_*duration_/path_duration_ : 0;
+  }
   const std::vector<MotionArm>& arms() const { return arms_; }
   const std::vector<Feedback>& last_feedback() const { return last_feedback_; }
   std::string diagnostics() const;
@@ -155,11 +162,13 @@ private:
   Limits limits_;
   std::function<bool()> cancelled_;
   std::function<double()> clock_;
+  StartPathValidator start_validator_;
   std::vector<Joints> previous_, velocity_;
   std::vector<Feedback> last_feedback_;
   double duration_ = 0, started_ = 0, previous_at_ = 0, arrived_at_ = -1;
   double path_duration_ = 0, path_finished_at_ = -1;
   double previous_fraction_ = 0;
+  double start_connection_ = 0;
   bool prepared_ = false, active_ = false;
 };
 }  // namespace xarm_motion

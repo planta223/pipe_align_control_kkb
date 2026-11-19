@@ -350,24 +350,88 @@ TEST_F(MotionTest, TrackingFailureOrLongCycleStopsBoth) {
     right.pose_error.setZero();
   }
 }
-TEST_F(MotionTest, NoFeasiblePathStepReportsJointAndCycleBeforeSending) {
+TEST_F(MotionTest, StartChangeOutsideValidatedEnvelopeBlocksBeforeEnable) {
   auto s = session(true); s->prepare(clock);
-  // 시작 허용 오차 이내지만 한 주기에 회복할 수 없는 관절 차이다.
-  left.q[0] += .004;
-  s->begin(clock); clock += .01;
-  try {
-    s->tick(clock);
-    FAIL() << "잘못된 증분을 전송했습니다.";
-  } catch (const std::runtime_error& error) {
-    const std::string message = error.what();
-    EXPECT_NE(message.find("경로 진행 조절 불가"),std::string::npos);
-    EXPECT_NE(message.find("joint=1"),std::string::npos);
-    EXPECT_NE(message.find("step_rad="),std::string::npos);
-    EXPECT_NE(message.find("allowed_rad="),std::string::npos);
-    EXPECT_NE(message.find("dt_ms=10."),std::string::npos);
-  }
+  left.q[0] += limits.arrival_joint*1.2;
+  EXPECT_THROW(s->begin(clock),std::runtime_error);
   EXPECT_EQ(left.sends+right.sends,0);
-  EXPECT_EQ(left.stops,1); EXPECT_EQ(right.stops,1);
+  EXPECT_EQ(left.enables+right.enables,0);
+}
+TEST_F(MotionTest, StationaryJointVariationConnectsWithoutRelaxingCommandLimits) {
+  // 0.000185946 rad reproduces the logged 1.81867 rad/s² candidate at
+  // dt=10.111526 ms. It is a valid stopped pose, but cannot be caught in one tick.
+  for(bool preplanned:{false,true})
+  for(double drift:{.000185946200514,-.000185946200514,.004,-.004}) {
+    SCOPED_TRACE(::testing::Message()<<"preplanned="<<preplanned<<" drift="<<drift);
+    auto s=session(true);s->prepare(clock);
+    std::array<std::vector<xm::Joints>,2> original;
+    for(size_t side=0;side<2;++side)
+      for(int i=0;i<=20;++i) original[side].push_back(s->arms()[side].plan->sample(i/20.));
+    left.q[2]+=drift;right.q[4]-=drift*.5;
+    // auto_align supplies an already checked path: its plan seed can differ
+    // from the feedback captured by prepare_planned(), as well as by begin().
+    if(preplanned) { ASSERT_NO_THROW(s->prepare_planned(clock)); }
+    const std::array<xm::Joints,2> measured{left.q,right.q};
+    const int enables=left.enables+right.enables;
+    bool checked=false;
+    s->set_start_path_validator([&](const std::vector<xm::MotionArm>& connected,double duration) {
+      checked=true;
+      EXPECT_EQ(left.enables+right.enables,enables);
+      EXPECT_FALSE(left.owned);EXPECT_FALSE(right.owned);
+      const double bridge=s->start_connection_duration()/s->duration();
+      EXPECT_GT(bridge,0);EXPECT_LT(bridge,1);
+      for(size_t side=0;side<2;++side) {
+        EXPECT_LT((connected[side].plan->sample(0)-measured[side]).norm(),1e-12);
+        EXPECT_TRUE(xm::pose_close(connected[side].plan->flange(0),model.fk(measured[side]),1e-8,1e-8));
+        EXPECT_DOUBLE_EQ(connected[side].plan->duration(),duration);
+        for(int i=0;i<=20;++i) {
+          const double fraction=bridge+(1-bridge)*i/20.;
+          EXPECT_LT((connected[side].plan->sample(fraction)-original[side][i]).norm(),1e-10);
+        }
+      }
+    });
+    ASSERT_NO_THROW(s->begin(clock))<<drift;
+    ASSERT_TRUE(checked);
+    EXPECT_GT(s->start_connection_duration(),0);
+    EXPECT_DOUBLE_EQ(s->path_elapsed(),0);
+    EXPECT_NE(s->diagnostics().find("start_connection_s="),std::string::npos);
+    const int queries=left.fk_calls+right.fk_calls+left.ik_calls+right.ik_calls;
+    std::array<xm::Joints,2> previous=measured;
+    std::array<xm::Joints,2> velocity{xm::Joints::Zero(),xm::Joints::Zero()};
+    const std::array<double,9> periods{.010111526,.01,.015,.03,.009,.02,.06,.009,.09};
+    bool done=false;
+    for(int i=0;i<20000 && !done;++i) {
+      const double dt=periods[i%periods.size()];clock+=dt;
+      try { done=s->tick(clock); }
+      catch(const std::exception& error) {
+        FAIL()<<"drift="<<drift<<" tick="<<i<<" / "<<error.what();
+      }
+      for(size_t side=0;side<2;++side) {
+        const auto& q=side==0?left.q:right.q;
+        const xm::Joints v=(q-previous[side])/dt;
+        EXPECT_LE((q-previous[side]).cwiseAbs().maxCoeff(),limits.joint_speed*std::min(dt,limits.joint_dt_cap)+1.1e-9);
+        EXPECT_LE((v-velocity[side]).cwiseAbs().maxCoeff()/dt,limits.joint_acceleration+1.1e-7);
+        EXPECT_TRUE(xm::pose_close(model.fk(previous[side])*tcp,model.fk(q)*tcp,
+          limits.linear_speed*dt+1e-7,limits.angular_speed*dt+1e-7));
+        previous[side]=q;velocity[side]=v;
+      }
+    }
+    ASSERT_TRUE(done);
+    for(size_t side=0;side<2;++side)
+      EXPECT_LT(((side==0?left.q:right.q)-original[side].back()).norm(),1e-10);
+    EXPECT_EQ(left.fk_calls+right.fk_calls+left.ik_calls+right.ik_calls,queries);
+  }
+}
+TEST_F(MotionTest, StartupCollisionRejectionAndLateDriftNeverEnableEitherArm) {
+  for(bool collision:{true,false}) {
+    auto s=session(true);s->prepare(clock);left.q[2]+=.000185946;
+    s->set_start_path_validator([&](const std::vector<xm::MotionArm>&,double) {
+      if(collision) throw std::runtime_error("synthetic start connection collision");
+      left.q[2]+=.02;
+    });
+    EXPECT_THROW(s->begin(clock),std::runtime_error);
+    EXPECT_EQ(left.enables+right.enables+left.sends+right.sends,0);
+  }
 }
 TEST_F(MotionTest, DualArmCompletesUsingMeasuredArrival) {
   auto s = session(true); s->prepare(clock); s->begin(clock);

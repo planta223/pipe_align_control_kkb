@@ -1,0 +1,7 @@
+{
+  "origin": "current control.yaml; historical run values unconfirmed",
+  "control_yaml_sha256": "c1f5419358e8699a2a13bfb37a4c185bcdc62ec130d81c3bb95ea44fc576f186",
+  "angle_deg": 2.000000000006498,
+  "endpoint_mm": 3.0,
+  "relative_mm": 5.0
+}

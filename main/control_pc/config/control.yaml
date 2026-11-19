@@ -2,6 +2,8 @@
 execution:
   standalone_enabled: true
   auto_align_enabled: true
+  # step4~7 UVS 시험 이동은 별도 허용한다. vision_measure는 SDK에 연결하지 않는다.
+  vision_align_enabled: true
 
 # 모델에 포함된 팔·환경 사이의 경로 여유거리다. 손·파이프 형상은 포함하지 않는다.
 pre_align_ready:
@@ -46,3 +48,44 @@ validation:
   stationary_joint_speed_rad_s: 0.01
   arrival_hold_s: 0.3
   arrival_timeout_s: 5.0
+
+# 카메라 외부 캘리브레이션 없이 작은 TCP 시험 이동으로 국소 대응 관계를 추정한다.
+# pre_align_ready의 속도와 분리한다. 단위: m, rad, s.
+vision_align:
+  left_topic: /vision/left_pipe/pose
+  right_topic: /vision/right_pipe/pose
+  frame_id: camera_left_optical_frame
+  pipe_length_m: 0.316
+  # CAD 원본 Z=0 / 316 mm 중 실제 마주보는 플랜지. step4 표시로 확인한다.
+  left_endpoint_z_m: 0.316
+  right_endpoint_z_m: 0.316
+  max_pose_age_s: 1.0
+  pair_timeout_s: 1.5
+  sample_window_s: 0.8
+  sample_timeout_s: 8.0
+  minimum_samples: 3
+  settle_s: 0.2
+  angle_tolerance_rad: 0.03490658504
+  relative_angle_tolerance_rad: 0.03490658504
+  position_tolerance_m: 0.003
+  relative_position_tolerance_m: 0.005
+  success_hold_s: 1.5
+  minimum_success_samples: 5
+  max_position_noise_m: 0.0025
+  max_angle_noise_rad: 0.01745329252
+  probe_translation_m: 0.003
+  probe_rotation_rad: 0.02617993878
+  max_translation_step_m: 0.002
+  max_rotation_step_rad: 0.01745329252
+  linear_speed_m_s: 0.005
+  angular_speed_rad_s: 0.05
+  gain: 0.5
+  damping: 0.05
+  max_endpoint_travel_m: 0.06
+  max_axis_turn_rad: 0.35
+  minimum_gap_m: 0.03
+  max_gap_change_m: 0.01
+  total_timeout_s: 300.0
+  max_stage_iterations: 30
+  max_moves: 120
+  max_worsening: 3

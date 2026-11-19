@@ -1,4 +1,5 @@
 #include "auto_align/steps/pre_align_ready.hpp"
+#include "auto_align/vision_align.hpp"
 #include "xarm_motion/xarm_backend.hpp"
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <rclcpp/rclcpp.hpp>
@@ -22,6 +23,8 @@ volatile std::sig_atomic_t interrupted = 0;
 void handle_signal(int) { interrupted = 1; }
 constexpr const char* usage =
   "사용법: ros2 run auto_align auto_align --step pre_align_ready\n"
+  "        ros2 run auto_align auto_align --step vision_measure  # step4 측정 전용, SDK 연결 없음\n"
+  "        ros2 run auto_align auto_align --step vision_align    # step4~7 UVS\n"
   "control.yaml의 execution.auto_align_enabled=true가 필요합니다. pre_align_ready.target_pose를 목표로 사용합니다.\n";
 void require(bool condition, const std::string& message) {
   if (!condition) throw std::runtime_error(message);
@@ -94,6 +97,9 @@ private:
 
 int main(int argc, char** argv) {
   if (argc == 2 && std::string(argv[1]) == "--help") { std::cout << usage; return 0; }
+  if (argc >= 3 && std::string(argv[1]) == "--step" &&
+      (std::string(argv[2]) == "vision_align" || std::string(argv[2]) == "vision_measure"))
+    return aa::vision_align_main(argc,argv);
   std::shared_ptr<Monitor> monitor;
   // SDK 연결 해제 대기 전에 종료 원인을 발행한다.
   std::vector<std::unique_ptr<xm::XArmBackend>> backends;
@@ -160,6 +166,20 @@ int main(int argc, char** argv) {
       return {arms[0].plan->sample(time/duration),arms[1].plan->sample(time/duration)};
     },duration,{arms[0].plan->joint_speed_bound(),arms[1].plan->joint_speed_bound()},cancelled);
     xm::MotionSession session(std::move(arms),config.limits,cancelled);
+    session.set_start_path_validator([&](const std::vector<xm::MotionArm>& connected,double seconds) {
+      monitor->status("PREPARING: 실측 시작 자세 연결 경로의 충돌 여유거리 재검사");
+      double published=0;
+      checker.check_path([&](double t)->aa::DualJoints {
+        return {connected[0].plan->sample(t/seconds),connected[1].plan->sample(t/seconds)};
+      },seconds,{connected[0].plan->joint_speed_bound(),connected[1].plan->joint_speed_bound()},[&] {
+        if(cancelled()) return true;
+        if(xm::steady_seconds()-published>=.05) {
+          monitor->feedback(connected,{connected[0].backend->read(),connected[1].backend->read()});
+          rclcpp::spin_some(monitor);published=xm::steady_seconds();
+        }
+        return cancelled();
+      });
+    });
     session.prepare_planned(xm::steady_seconds());
     monitor->status("READY: pre_align_ready / 목표 "+target.name+" / 충돌 여유 "+std::to_string(collision_config.margin*1000)+
       "mm / 예상 "+std::to_string(session.duration())+"초 / Enter로 실행");
@@ -173,6 +193,7 @@ int main(int argc, char** argv) {
     require(!cancelled(),"실행이 취소됐습니다.");
     checker.check(joints(session.feedback(xm::steady_seconds())));
     session.begin(xm::steady_seconds());
+    if(session.start_connection_duration()>0) monitor->diagnostics(session.diagnostics());
     auto next = std::chrono::steady_clock::now();
     double published_at = 0, diagnostic_at = 0;
     std::string phase;

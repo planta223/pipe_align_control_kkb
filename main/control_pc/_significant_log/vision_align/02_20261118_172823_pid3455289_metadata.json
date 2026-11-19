@@ -1,0 +1,169 @@
+{
+  "source_log": "auto_align_3455289_1794990502845.log",
+  "source_sha256": "7006d3daff2df206f06e1a8e5119b85a226ef44167e85470fe38361ad38dc770",
+  "start_kst": "2026-11-18T17:28:23.750823+09:00",
+  "duration_s": 144.93708891,
+  "measurements": 38,
+  "phases": [
+    {
+      "start_s": 0.0,
+      "phase": "STEP4",
+      "end_s": 2.8681631710000004
+    },
+    {
+      "start_s": 2.8681631710000004,
+      "phase": "READY",
+      "end_s": 6.6856980770000005
+    },
+    {
+      "start_s": 6.6856980770000005,
+      "phase": "STEP4",
+      "end_s": 8.202703135
+    },
+    {
+      "start_s": 8.202703135,
+      "phase": "STEP5",
+      "end_s": 144.93708891
+    }
+  ],
+  "events": [
+    {
+      "source_line": 1,
+      "elapsed_s": 0.0,
+      "message": "RUNNING: STEP4: 좌우 비전 수신·끝단 표시 / 로봇 이동 없음"
+    },
+    {
+      "source_line": 3,
+      "elapsed_s": 2.8681631710000004,
+      "message": "READY: vision_align step4~7 / 좌우 CAD 끝단·camera 축 표시를 확인한 뒤 Enter / 작은 시험 이동이 시작됩니다."
+    },
+    {
+      "source_line": 4,
+      "elapsed_s": 6.6856980770000005,
+      "message": "RUNNING: STEP4: 좌우 끝단 측정·고정 목표 설정"
+    },
+    {
+      "source_line": 6,
+      "elapsed_s": 8.202703135,
+      "message": "RUNNING: STEP5: 카메라 X축 평행 회전 보정·검증"
+    },
+    {
+      "source_line": 7,
+      "elapsed_s": 8.202879183,
+      "message": "RUNNING: STEP5: left UVS 시험 이동·대응 관계 추정"
+    },
+    {
+      "source_line": 29,
+      "elapsed_s": 42.405429793,
+      "message": "RUNNING: STEP5: left error 0.206305 -> 0.18618 rad / moves=7"
+    },
+    {
+      "source_line": 30,
+      "elapsed_s": 42.405463644,
+      "message": "RUNNING: STEP5: right UVS 시험 이동·대응 관계 추정"
+    },
+    {
+      "source_line": 50,
+      "elapsed_s": 76.00882091700001,
+      "message": "RUNNING: STEP5: right error 0.473072 -> 0.468538 rad / moves=14"
+    },
+    {
+      "source_line": 55,
+      "elapsed_s": 81.42415280600001,
+      "message": "RUNNING: STEP5: left error 0.187006 -> 0.178575 rad / moves=15"
+    },
+    {
+      "source_line": 57,
+      "elapsed_s": 84.67817731800001,
+      "message": "RUNNING: STEP5: right error 0.466016 -> 0.445615 rad / moves=16"
+    },
+    {
+      "source_line": 62,
+      "elapsed_s": 90.324685067,
+      "message": "RUNNING: STEP5: left error 0.19123 -> 0.179399 rad / moves=17"
+    },
+    {
+      "source_line": 66,
+      "elapsed_s": 93.830777536,
+      "message": "RUNNING: STEP5: right error 0.440531 -> 0.424507 rad / moves=18"
+    },
+    {
+      "source_line": 71,
+      "elapsed_s": 99.216733649,
+      "message": "RUNNING: STEP5: left error 0.181775 -> 0.160258 rad / moves=19"
+    },
+    {
+      "source_line": 73,
+      "elapsed_s": 102.78284335400001,
+      "message": "RUNNING: STEP5: right error 0.423942 -> 0.411621 rad / moves=20"
+    },
+    {
+      "source_line": 78,
+      "elapsed_s": 108.173683401,
+      "message": "RUNNING: STEP5: left error 0.157196 -> 0.143778 rad / moves=21"
+    },
+    {
+      "source_line": 82,
+      "elapsed_s": 111.941510074,
+      "message": "RUNNING: STEP5: right error 0.418403 -> 0.403512 rad / moves=22"
+    },
+    {
+      "source_line": 87,
+      "elapsed_s": 117.326878983,
+      "message": "RUNNING: STEP5: left error 0.152649 -> 0.144859 rad / moves=23"
+    },
+    {
+      "source_line": 91,
+      "elapsed_s": 121.05552959100001,
+      "message": "RUNNING: STEP5: right error 0.403999 -> 0.388175 rad / moves=24"
+    },
+    {
+      "source_line": 96,
+      "elapsed_s": 126.672113585,
+      "message": "RUNNING: STEP5: left error 0.125774 -> 0.142494 rad / moves=25"
+    },
+    {
+      "source_line": 100,
+      "elapsed_s": 130.72608987700002,
+      "message": "RUNNING: STEP5: right error 0.388707 -> 0.375792 rad / moves=26"
+    },
+    {
+      "source_line": 105,
+      "elapsed_s": 136.035229154,
+      "message": "RUNNING: STEP5: left error 0.164309 -> 0.138452 rad / moves=27"
+    },
+    {
+      "source_line": 109,
+      "elapsed_s": 139.842562526,
+      "message": "RUNNING: STEP5: right error 0.375141 -> 0.363955 rad / moves=28"
+    },
+    {
+      "source_line": 113,
+      "elapsed_s": 144.93708891,
+      "message": "STOPPED: 사용자가 비전 정렬을 중지했습니다."
+    }
+  ],
+  "end_message": "STOPPED: 사용자가 비전 정렬을 중지했습니다.",
+  "signed_position_error_definition": {
+    "frame": "camera coordinates",
+    "individual": "measured endpoint minus logged goal, Y/Z components in mm",
+    "relative": "right endpoint minus left endpoint, Y/Z components in mm"
+  },
+  "signed_angles_available": false,
+  "signed_angles_unavailable_reason": "Source logs contain angle magnitudes without axis vectors.",
+  "raw_camera_receive_period_available": false,
+  "source_measurement_interval_s": {
+    "count": 37,
+    "min": 0.9960008890000001,
+    "median": 4.065000589,
+    "mean": 3.789271184783784,
+    "max": 7.264998489000001
+  },
+  "source_age_s": {
+    "count": 38,
+    "min": 0.0582592,
+    "median": 0.281211,
+    "mean": 0.27101083684210525,
+    "max": 0.342681
+  }
+}

@@ -1,0 +1,154 @@
+{
+  "source_log": "auto_align_3457841_1794990782535.log",
+  "source_sha256": "018116c7389e43d73e05698706c2c89157e3c4f77910226de53a373667dcd40d",
+  "start_kst": "2026-11-18T17:33:03.755688+09:00",
+  "duration_s": 136.54942283300002,
+  "measurements": 37,
+  "phases": [
+    {
+      "start_s": 0.0,
+      "phase": "STEP4",
+      "end_s": 2.826654103
+    },
+    {
+      "start_s": 2.826654103,
+      "phase": "READY",
+      "end_s": 4.662324292
+    },
+    {
+      "start_s": 4.662324292,
+      "phase": "STEP4",
+      "end_s": 5.995838497
+    },
+    {
+      "start_s": 5.995838497,
+      "phase": "STEP5",
+      "end_s": 136.54942283300002
+    }
+  ],
+  "events": [
+    {
+      "source_line": 1,
+      "elapsed_s": 0.0,
+      "message": "RUNNING: STEP4: 좌우 비전 수신·끝단 표시 / 로봇 이동 없음"
+    },
+    {
+      "source_line": 3,
+      "elapsed_s": 2.826654103,
+      "message": "READY: vision_align step4~7 / 좌우 CAD 끝단·camera 축 표시를 확인한 뒤 Enter / 작은 시험 이동이 시작됩니다."
+    },
+    {
+      "source_line": 4,
+      "elapsed_s": 4.662324292,
+      "message": "RUNNING: STEP4: 좌우 끝단 측정·고정 목표 설정"
+    },
+    {
+      "source_line": 6,
+      "elapsed_s": 5.995838497,
+      "message": "RUNNING: STEP5: 카메라 X축 평행 회전 보정·검증"
+    },
+    {
+      "source_line": 7,
+      "elapsed_s": 5.996041967,
+      "message": "RUNNING: STEP5: left UVS 시험 이동·대응 관계 추정"
+    },
+    {
+      "source_line": 27,
+      "elapsed_s": 41.275656538,
+      "message": "RUNNING: STEP5: left error 0.135519 -> 0.123995 rad / moves=7"
+    },
+    {
+      "source_line": 28,
+      "elapsed_s": 41.275675468,
+      "message": "RUNNING: STEP5: right UVS 시험 이동·대응 관계 추정"
+    },
+    {
+      "source_line": 46,
+      "elapsed_s": 75.472599699,
+      "message": "RUNNING: STEP5: right error 0.0403536 -> 0.0220818 rad / moves=14"
+    },
+    {
+      "source_line": 51,
+      "elapsed_s": 80.877552573,
+      "message": "RUNNING: STEP5: left error 0.131539 -> 0.126257 rad / moves=15"
+    },
+    {
+      "source_line": 55,
+      "elapsed_s": 84.318941709,
+      "message": "RUNNING: STEP5: right error 0.0197121 -> 0.0145539 rad / moves=16"
+    },
+    {
+      "source_line": 60,
+      "elapsed_s": 89.59451331700001,
+      "message": "RUNNING: STEP5: left error 0.119257 -> 0.109972 rad / moves=17"
+    },
+    {
+      "source_line": 65,
+      "elapsed_s": 95.26352272800001,
+      "message": "RUNNING: STEP5: left error 0.108592 -> 0.105422 rad / moves=18"
+    },
+    {
+      "source_line": 69,
+      "elapsed_s": 98.728073632,
+      "message": "RUNNING: STEP5: right error 0.0149628 -> 0.0107192 rad / moves=19"
+    },
+    {
+      "source_line": 74,
+      "elapsed_s": 104.112222591,
+      "message": "RUNNING: STEP5: left error 0.112351 -> 0.0962953 rad / moves=20"
+    },
+    {
+      "source_line": 79,
+      "elapsed_s": 110.059500806,
+      "message": "RUNNING: STEP5: left error 0.0944417 -> 0.0833459 rad / moves=21"
+    },
+    {
+      "source_line": 84,
+      "elapsed_s": 115.44879826600001,
+      "message": "RUNNING: STEP5: left error 0.0861385 -> 0.0883676 rad / moves=22"
+    },
+    {
+      "source_line": 89,
+      "elapsed_s": 120.829283179,
+      "message": "RUNNING: STEP5: left error 0.0865861 -> 0.0886328 rad / moves=23"
+    },
+    {
+      "source_line": 94,
+      "elapsed_s": 126.45835550000001,
+      "message": "RUNNING: STEP5: left error 0.084019 -> 0.0807192 rad / moves=24"
+    },
+    {
+      "source_line": 99,
+      "elapsed_s": 131.835489934,
+      "message": "RUNNING: STEP5: left error 0.0848834 -> 0.0676576 rad / moves=25"
+    },
+    {
+      "source_line": 103,
+      "elapsed_s": 136.54942283300002,
+      "message": "STOPPED: 사용자가 비전 정렬을 중지했습니다."
+    }
+  ],
+  "end_message": "STOPPED: 사용자가 비전 정렬을 중지했습니다.",
+  "signed_position_error_definition": {
+    "frame": "camera coordinates",
+    "individual": "measured endpoint minus logged goal, Y/Z components in mm",
+    "relative": "right endpoint minus left endpoint, Y/Z components in mm"
+  },
+  "signed_angles_available": false,
+  "signed_angles_unavailable_reason": "Source logs contain angle magnitudes without axis vectors.",
+  "raw_camera_receive_period_available": false,
+  "source_measurement_interval_s": {
+    "count": 36,
+    "min": 1.0010049010000002,
+    "median": 4.33199934,
+    "mean": 3.6742499683333336,
+    "max": 5.7319396330000005
+  },
+  "source_age_s": {
+    "count": 37,
+    "min": 0.18947,
+    "median": 0.302215,
+    "mean": 0.2900041891891892,
+    "max": 0.344824
+  }
+}

@@ -357,6 +357,106 @@ Pose MotionPlan::flange(double fraction) const {
   return interpolate(fk_cache_[i],fk_cache_[i+1],t-i);
 }
 
+namespace {
+// A small joint-space connection keeps the exact, collision-checked original
+// path intact. Quintic timing gives zero velocity/acceleration at both ends.
+// All SDK FK queries and timing checks finish before the backend is enabled.
+class StartConnection final : public MotionTrajectory {
+public:
+  StartConnection(const Kinematics& kinematics, const Joints& actual,
+                  const Joints& planned, const Pose& tcp, const Limits& limits)
+    : start_(actual), delta_(planned-actual) {
+    const double largest=delta_.cwiseAbs().maxCoeff();
+    // Consecutive velocity estimates average different time intervals. Bound
+    // continuous acceleration so (v_now-v_previous)/dt_now still passes when
+    // a long accepted cycle is followed by the shortest accepted cycle.
+    const double shortest=limits.period()*.85;
+    const double acceleration=limits.joint_acceleration*2*shortest/(shortest+limits.feedback_timeout);
+    duration_=std::max({2*limits.period(),1.875*largest/limits.effective_joint_speed(),
+      std::sqrt((10*std::sqrt(3.)/3)*largest/acceleration)});
+    int count=largest<1e-12?1:32;
+    bool cached=false;
+    for(int attempt=0;attempt<5;++attempt) {
+      cache_.clear();
+      for(int i=0;i<=count;++i) cache_.push_back(kinematics.fk(sample(double(i)/count)));
+      cached=true;
+      for(int i=0;i<count;++i) {
+        const double t=(i+.5)/count;
+        if(!pose_close(kinematics.fk(sample(t)),flange(t),.00001,.0001)) { cached=false;break; }
+      }
+      if(cached) break;
+      count*=2;
+    }
+    require(cached,"시작 연결 FK 캐시의 오차가 허용 범위를 벗어났습니다.");
+    bool valid=false;
+    for(int attempt=0;attempt<8;++attempt) {
+      const int steps=std::max(2,static_cast<int>(std::ceil(duration_*limits.rate)));
+      const double dt=duration_/steps;
+      Joints previous=start_,velocity=Joints::Zero();
+      Pose before=flange(0),before_tcp=before*tcp;
+      double ratio=1;
+      for(int i=1;i<=steps;++i) {
+        const double t=double(i)/steps;
+        const Joints q=sample(t),v=(q-previous)/dt;
+        const Pose after=flange(t),after_tcp=after*tcp;
+        ratio=std::max({ratio,v.cwiseAbs().maxCoeff()/limits.effective_joint_speed(),
+          std::sqrt((v-velocity).cwiseAbs().maxCoeff()/dt/limits.joint_acceleration),
+          (after.translation()-before.translation()).norm()/dt/limits.linear_speed,
+          (after_tcp.translation()-before_tcp.translation()).norm()/dt/limits.linear_speed,
+          rotation_error(before,after)/dt/limits.angular_speed});
+        previous=q;velocity=v;before=after;before_tcp=after_tcp;
+      }
+      ratio=std::max(ratio,std::sqrt(velocity.cwiseAbs().maxCoeff()/dt/limits.joint_acceleration));
+      if(ratio<=1.000001) { valid=true;break; }
+      duration_*=ratio*1.1;
+    }
+    require(valid && std::isfinite(duration_) && duration_<=600,"시작 연결의 속도·가속도 검증에 실패했습니다.");
+  }
+  Joints sample(double fraction) const override {
+    const double s=std::clamp(fraction,0.,1.);
+    const double blend=s*s*s*(10+s*(-15+6*s));
+    return start_+blend*delta_;
+  }
+  Pose flange(double fraction) const override {
+    const double t=std::clamp(fraction,0.,1.)*(cache_.size()-1);
+    const size_t i=std::min(static_cast<size_t>(t),cache_.size()-2);
+    return interpolate(cache_[i],cache_[i+1],t-i);
+  }
+  double duration() const override { return duration_; }
+  double joint_speed_bound() const override { return 1.875*delta_.cwiseAbs().maxCoeff()/duration_; }
+private:
+  Joints start_,delta_;
+  std::vector<Pose> cache_;
+  double duration_=0;
+};
+class ConnectedTrajectory final : public MotionTrajectory {
+public:
+  ConnectedTrajectory(std::unique_ptr<MotionTrajectory> original,std::unique_ptr<StartConnection> connection,
+                      double connection_time,double original_time)
+    : original_(std::move(original)),connection_(std::move(connection)),connection_time_(connection_time),original_time_(original_time) {
+    require(pose_close(connection_->flange(1),original_->flange(0),.00001,.0001),"연결 구간과 기존 경로의 FK가 일치하지 않습니다.");
+    require((connection_->sample(1)-original_->sample(0)).cwiseAbs().maxCoeff()<1e-12,"연결 구간과 기존 경로의 관절각이 일치하지 않습니다.");
+  }
+  Joints sample(double fraction) const override {
+    const double t=std::clamp(fraction,0.,1.)*duration();
+    return t<=connection_time_ ? connection_->sample(t/connection_time_) : original_->sample((t-connection_time_)/original_time_);
+  }
+  Pose flange(double fraction) const override {
+    const double t=std::clamp(fraction,0.,1.)*duration();
+    return t<=connection_time_ ? connection_->flange(t/connection_time_) : original_->flange((t-connection_time_)/original_time_);
+  }
+  double duration() const override { return connection_time_+original_time_; }
+  double joint_speed_bound() const override {
+    return std::max(connection_->joint_speed_bound()*connection_->duration()/connection_time_,
+      original_->joint_speed_bound()*original_->duration()/original_time_);
+  }
+private:
+  std::unique_ptr<MotionTrajectory> original_;
+  std::unique_ptr<StartConnection> connection_;
+  double connection_time_,original_time_;
+};
+}
+
 MotionSession::MotionSession(std::vector<MotionArm> arms, Limits limits,
                              std::function<bool()> cancelled, std::function<double()> clock)
   : arms_(std::move(arms)), limits_(limits), cancelled_(std::move(cancelled)), clock_(std::move(clock)) {
@@ -398,6 +498,7 @@ std::string MotionSession::diagnostics() const {
   const double degrees = 180/std::acos(-1.0);
   std::ostringstream out;
   out << std::fixed << std::setprecision(3);
+  if(start_connection_>0) out << "start_connection_s=" << start_connection_duration() << " | ";
   const auto item = [&out](const char* name, double value, double limit) {
     out << name << '=' << value << '/' << limit << (value <= limit ? "[OK] " : "[FAIL] ");
   };
@@ -429,7 +530,7 @@ std::string MotionSession::diagnostics() const {
 }
 void MotionSession::prepare(double now) {
   require(!active_, "이동 중에는 경로를 준비할 수 없습니다.");
-  prepared_ = false; duration_ = 0; previous_fraction_ = 0;
+  prepared_ = false; duration_ = 0; previous_fraction_ = 0; start_connection_ = 0;
   const auto values = feedback(now);
   for (size_t i = 0; i < arms_.size(); ++i) {
     auto& arm = arms_[i];
@@ -446,7 +547,7 @@ void MotionSession::prepare(double now) {
 }
 void MotionSession::prepare_planned(double now) {
   require(!active_, "이동 중에는 경로를 준비할 수 없습니다.");
-  prepared_ = false; duration_ = 0; previous_fraction_ = 0;
+  prepared_ = false; duration_ = 0; previous_fraction_ = 0; start_connection_ = 0;
   const auto values = feedback(now);
   for (size_t i = 0; i < arms_.size(); ++i) {
     auto& arm = arms_[i];
@@ -498,8 +599,46 @@ void MotionSession::begin(double now) {
     validate_start(arms_[i], values[i]);
     require((values[i].joints-arms_[i].prepared.joints).cwiseAbs().maxCoeff() <= limits_.arrival_joint,
       arms_[i].side+": 경로 계산 후 실제 관절각이 바뀌었습니다. 다시 실행하세요.");
+    require((values[i].joints-arms_[i].plan->sample(0)).cwiseAbs().maxCoeff() <= limits_.arrival_joint,
+      arms_[i].side+": 실측 자세와 검사된 경로 시작점의 차이가 허용 범위를 넘었습니다.");
     previous_.push_back(values[i].joints);
     velocity_.push_back(Joints::Zero());
+  }
+  bool needs_connection=false;
+  for(size_t i=0;i<arms_.size();++i)
+    needs_connection|=(arms_[i].plan->sample(0)-values[i].joints).cwiseAbs().maxCoeff()>1e-12;
+  if(needs_connection) {
+    prepared_=false;
+    std::vector<std::unique_ptr<StartConnection>> connections;
+    const double original_time=path_duration_;
+    double connection_time=0;
+    for(size_t i=0;i<arms_.size();++i) {
+      auto& arm=arms_[i];
+      SdkKinematics kinematics(*arm.backend,*arm.model,arm.flange_T_tcp);
+      connections.push_back(std::make_unique<StartConnection>(kinematics,values[i].joints,
+        arm.plan->sample(0),arm.flange_T_tcp,limits_));
+      connection_time=std::max(connection_time,connections.back()->duration());
+    }
+    for(size_t i=0;i<arms_.size();++i) {
+      auto& arm=arms_[i];
+      arm.start=connections[i]->flange(0);
+      arm.plan=std::make_unique<ConnectedTrajectory>(std::move(arm.plan),std::move(connections[i]),connection_time,original_time);
+    }
+    start_connection_=connection_time;
+    duration_=original_time+connection_time;
+    prepare_timing();
+    if(start_validator_) start_validator_(arms_,path_duration_);
+    check_cancelled();
+    // Cached FK construction/checking may take time. A changed robot must not
+    // silently become a different starting point after the path was checked.
+    const auto checked=feedback(clock_());
+    for(size_t i=0;i<arms_.size();++i) {
+      require(checked[i].velocities.cwiseAbs().maxCoeff()<=limits_.stationary_speed &&
+        (checked[i].joints-values[i].joints).cwiseAbs().maxCoeff()<=limits_.arrival_joint,
+        arms_[i].side+": 시작 연결 검사 중 자세가 바뀌었습니다. 다시 준비하세요.");
+      validate_tracking(arms_[i],checked[i],values[i].joints,arms_[i].plan->flange(0)*arms_[i].flange_T_tcp);
+    }
+    prepared_=true;
   }
   check_cancelled();
   active_ = true; // 일부 팔의 활성화 실패도 모든 팔의 중지 대상으로 처리한다.

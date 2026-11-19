@@ -155,6 +155,7 @@ ros2 topic echo --once /vision/right_pipe/pose \
 - 자동 재등록과 tracking 중 재등록 키는 없다. 터미널 2의 tracking을 종료하고 같은 명령으로 다시 실행하여 YOLO 검출부터 진행한다. 카메라 publisher는 유지할 수 있다.
 - 손에 가려진 상태의 초기 등록 성공 여부, 실제 추적 성능, 양 PC 수신은 실행 확인이 필요하다.
 - camera-to-base calibration 검증과 로봇 자율제어 전환은 별도 작업이다.
+- 제어 PC의 step4~7 UVS는 정밀 camera-to-base 변환을 입력하지 않고 작은 시험 이동으로 대응 관계를 추정한다. 위 좌우 pose와 `--z-axis-stabilization` 설정을 사용한다. [제어 PC 실행](../control_pc/README_only_control.md#6-준비-이동-후-비전-정렬--step47)을 따른다.
 
 작업을 마치면 터미널 1의 카메라를 Ctrl+C로 종료하고, X11 접근 허용은 호스트에서 해제한다.
 

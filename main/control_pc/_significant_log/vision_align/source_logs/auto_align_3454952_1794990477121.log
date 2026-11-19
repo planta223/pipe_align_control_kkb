@@ -1,0 +1,3 @@
+[INFO] [1794990477.829810849] [auto_align]: RUNNING: STEP4: 좌우 비전 수신·끝단 표시 / 로봇 이동 없음
+[INFO] [1794990478.891177518] [auto_align]: VISION: stamp=1794990478610018744 / left endpoint_m=[0.00259152  -0.122251   0.331182] CAD_z=0.316 axis_X_deg=6.78056 / right endpoint_m=[  0.16731 -0.131934  0.342871] CAD_z=0.316 axis_X_deg=4.95767 / goal_yz_m=-0.127092  0.337027 / relative_angle_deg=10.5465 / gap_x_mm=164.719 / source_age_s=0.281099 / delta_yz_mm=-9.68323  11.6886
+[INFO] [1794990480.761988048] [auto_align]: STOPPED: 사용자가 비전 정렬을 중지했습니다.

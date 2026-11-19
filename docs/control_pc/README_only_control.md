@@ -89,3 +89,29 @@ ros2 run simulation_validation live_control --arm both --step pre_align_ready
 
 RViz 없이 제어기만 실행하려면 `ros2 run auto_align auto_align --step pre_align_ready`를 사용한다.
 사용 후 `execution.auto_align_enabled`를 `false`로 되돌린다. 실물 검증은 사용자가 직접 실행·Enter 입력으로 수행한다.
+
+## 6. 준비 이동 후 비전 정렬 — step4~7
+
+비전 PC에서 좌우 pipe tracking을 유지한다. 이미 준비 자세이면 위 준비 이동을 반복하지 않는다.
+터미널 환경은 위와 같다. 먼저 로봇에 연결하지 않는 측정 전용으로 끝단·축을 확인한다.
+
+```bash
+ros2 run auto_align auto_align --step vision_measure
+```
+
+실제 이동은 `control.yaml`의 `execution.auto_align_enabled`와 `execution.vision_align_enabled`를
+모두 true로 설정하고, teleop 및 다른 팔 제어기를 종료한 뒤 실행한다.
+
+```bash
+ros2 run auto_align auto_align --step vision_align
+```
+
+RViz를 함께 쓰려면 위 명령 대신 다음을 사용한다.
+
+```bash
+ros2 run simulation_validation live_control --arm both --step vision_align
+```
+
+READY 후 Enter로 UVS 시험 이동과 보정을 시작한다. Ctrl+C는 중지한다.
+끝단 정의·측정 토픽·초기값·실물 검증 범위는 [auto_align](../../main/control_pc/src/auto_align/README.md#step47-비전-uvs)를 따른다.
+YAML 변경은 재시작으로 반영되며 새 C++ 코드 사용 전에는 auto_align을 재빌드한다.

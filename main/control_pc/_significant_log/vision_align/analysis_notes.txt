@@ -1,0 +1,18 @@
+최신 vision_align 실행 3개: 첫 로그 시각 기준 내림차순. vision_measure와 pre_align_ready 제외.
+이동 전에 중지된 실행도 생략하지 않았다. 세 번째 실행은 측정 1회이며 주기 계산 불가.
+좌우 각도: 각 파이프 축과 카메라 X축의 예각 및 상대 각도의 크기. 원본 로그에 축 벡터가 없어 부호 복원 불가.
+부호 있는 개별 위치: 카메라 좌표계에서 측정 끝단 − 각 로그의 goal_yz_m. Y와 Z를 별도 표시, 단위 mm.
+부호 있는 상대 위치: 우측 끝단 − 좌측 끝단. 원본 로그의 delta_yz_mm와 같은 부호 규칙.
+CSV: left/right_y/z_error_mm는 개별 성분, relative_y/z_error_mm는 상대 성분. 기존 yz_error_mm는 크기.
+기존 Y/Z 오차 크기는 허용값 비교용으로 함께 표시. X 오차를 제외하므로 전체 3D 완료 판정과 다름.
+초기 STEP4의 목표는 당시 표시 목표이며, 제어 시작 STEP4에서 고정 목표가 설정된다.
+시간축: 각 로그 출력 시각에서 해당 실행의 첫 로그 시각을 뺀 값.
+원본 프레임 수신 시각이 없어 원본 수신 주기/Hz는 알 수 없다.
+source_measurement_interval_s: 연속 VISION 결과의 원본 영상 stamp 간격.
+log_measurement_interval_s: 연속 VISION 로그 출력 간격. 둘 다 운동/정지/측정 대기를 포함.
+source_age_s: 로그에서 그대로 추출한 영상 나이. 순수 네트워크 지연으로 해석하지 않는다.
+각 선은 정지 평균 측정점 연결이며, 측정되지 않은 운동 중 상태를 복원하지 않는다.
+STEP5는 UVS 시험 이동/복귀도 포함. STEP6, STEP7은 세 실행 모두 미진입.
+참고선은 reference_thresholds.json에 보관한 현재 YAML 값이며 실행 당시 임계치 보증이 아님.
+원본 로그는 source_logs/에 바이트 그대로 보관했으며 metadata.json에 SHA256과 원본 행 번호를 기록.
+재생성: python3 -B main/control_pc/_significant_log/vision_align/plot_vision_align.py

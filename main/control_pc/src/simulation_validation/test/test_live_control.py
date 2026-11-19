@@ -112,6 +112,18 @@ class FeedbackTests(unittest.TestCase):
 
 
 class RunnerTests(unittest.TestCase):
+    def test_vision_align_step_has_no_saved_pose_arguments(self):
+        args = arguments(['--arm', 'both', '--step', 'vision_align'])
+        self.assertIsNone(args.start_pose)
+        self.assertIsNone(args.target_pose)
+        with self.assertRaises(SystemExit):
+            arguments(['--arm', 'left', '--step', 'vision_align'])
+        with patch('simulation_validation.live_control.load_yaml', return_value={
+                'execution': {'vision_align_enabled': True, 'auto_align_enabled': False}}), \
+                patch('simulation_validation.live_control.subprocess.Popen') as popen:
+            self.assertEqual(main(['--arm', 'both', '--step', 'vision_align']), 1)
+            popen.assert_not_called()
+
     def test_pre_align_step_uses_current_start_and_configured_target(self):
         args = arguments(['--arm', 'both', '--step', 'pre_align_ready'])
         self.assertIsNone(args.start_pose)

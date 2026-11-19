@@ -2,7 +2,7 @@
 
 C++ 독립 패키지다. 공통 YAML의 시작·목표 flange 자세를 읽고 공식 C++ SDK의 FK·IK를 기준으로 실물 경로를 계산한다. 공식 URDF는 관절 제한과 모델 차이 진단에 사용한다. 공식 C++ SDK로 관절 피드백을 받고 `set_servo_angle_j` 명령을 보낸다.
 
-`simulation_validation`의 `live_control` 실행기로 실측 시각화와 함께 실행할 수 있다. `auto_align`은 아직 사용하지 않는다.
+`simulation_validation`의 `live_control` 실행기로 실측 시각화와 함께 실행할 수 있다. `auto_align`의 준비 이동과 비전 UVS도 이 패키지의 경로·실행부를 사용한다.
 
 ## 구성
 
@@ -61,6 +61,14 @@ ros2 run xarm_motion xarm_motion \
 
 실측 관절각을 첫 관절 명령의 기준으로 사용한다. 시작 자세 이름은 실측 flange가 허용 범위 안에 있는지 검사하는 용도다. SDK FK로 계산한 현재 flange에서 저장된 목표까지 계산하며, 시작점 IK로 관절각을 다시 맞추지 않는다. flange 목표에 고정 TCP offset을 곱하고 m를 mm로 바꿔 SDK에 전달한다.
 
+실행 직전 실측 관절각과 기존 경로 시작점 사이에 작은 차이가 있으면, 실측 자세에서 기존 시작점까지
+5차 보간 연결 구간을 추가한다. 연결의 시작·끝 속도와 가속도는 0이며 기존 경로의 관절해는 변경하지 않는다.
+SDK FK 캐시·관절 제한·flange/TCP 속도·관절 가속도를 연결 구간에서도 확인한다. 큰 변화는 기존 시작 허용값으로
+연결 전에 거부한다. 연결 경로 검사 중 허용 범위를 넘는 추가 이동이 생겨도 활성화 전에 거부한다.
+`auto_align`은 새 연결을 포함한 전체 경로의 모델 충돌을 다시 검사한다. 모든 검사와 SDK FK는 활성화 전에 끝난다.
+명령 가속도의 첫 기준은 연결 구간의 실측 시작점이며, 매 주기 측정 흔들림으로 명령 기준을 덮어쓰지 않는다.
+`MEASURE`의 `start_connection_s`는 연결에 할당된 실행 예상 시간이다. 기존 1초 최소 이동 시간 정책은 유지한다.
+
 위치는 직선, 방향은 quaternion 최단 회전으로 보간한다. SDK·URDF 관절 제한을 검사한다. SDK 1.17 IK에는 seed 인자가 없으므로, SDK FK의 수치 Jacobian으로 직전 관절 해 근처를 먼저 계산한다. 이 계산이 수렴하지 않으면 SDK IK 후보를 확인하고 연속성·FK 잔차 검사를 적용한다. 이 보정도 SDK FK만 사용하며 새 기구학 라이브러리는 추가하지 않는다. 해의 연속성과 SDK FK 잔차를 만족하지 못하면 이동 전에 거부한다. 관절해 사이에는 구간별 3차 보간을 적용하고, 전체 경로 시각에는 smoothstep을 적용해 시작·도착 속도를 0으로 한다. flange·TCP 속도와 관절 속도·가속도에 맞춰 전체 시간을 늘린다. 양팔은 더 긴 경로 시간에 맞춰 함께 출발·도착하도록 계산한다. 실행 중 실제 주기로 증분·가속도·TCP 속도를 다시 검사한다. 지연 시 양팔의 공통 경로 진행도를 줄여 제한을 만족하는 명령만 보내며, 가능한 진행도를 찾지 못하면 중지한다.
 
 SDK FK·IK 조회는 PREPARING 단계에서 끝낸다. FK 경로는 중간점 오차 0.01 mm·0.0001 rad 기준으로 검사해 저장하고, 실행 중에는 저장한 경로를 보간한다. 100 Hz 제어 중 추가 FK·IK 조회는 하지 않는다. SDK 계산을 포함하므로 READY까지 준비 시간이 늘어날 수 있다.
@@ -69,7 +77,7 @@ SDK FK·IK 조회는 PREPARING 단계에서 끝낸다. FK 경로는 중간점 �
 
 | 값 | 기본값 | 근거 |
 |---|---|---|
-| 주기·Cartesian 속도 | 100 Hz, 0.02 m/s, 0.2 rad/s | 외부 `teleop_xarm/omega7_cartesian_slave.cpp` |
+| 주기·Cartesian 속도 | 100 Hz, 0.08 m/s, 0.4 rad/s | 외부 native 제어 주기와 `Omega7/ros2_ws/src/omega7_master/config/omega7.yaml`의 실행 설정 |
 | TCP 추종 오차 | 5 mm, 0.1 rad | 외부 `teleop_xarm/cartesian_follow.hpp` |
 | 관절 증분·추종 오차 | `0.2 × min(dt, 0.004)` rad, 0.05 rad | 외부 `teleop_xarm/omega7_translation.hpp`의 `JointRamp` |
 | 관절 가속도 | 25 deg/s² = 0.436332312999 rad/s² | 외부 `xarm_sdk/example/init.cc`; 새 관절 경로 제한에 적용 |

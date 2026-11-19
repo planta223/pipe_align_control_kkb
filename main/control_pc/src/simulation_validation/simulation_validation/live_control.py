@@ -25,6 +25,8 @@ def settings(gate='standalone_enabled'):
     # 원본 파일만 검사한다. 최종 허용 검사는 C++ 실행기가 다시 수행한다.
     if control.get('execution', {}).get(gate) is not True:
         raise ValueError(f'control.yaml의 execution.{gate}=true가 필요합니다. 실행 옵션으로 변경할 수 없습니다.')
+    if gate == 'vision_align_enabled' and control.get('execution', {}).get('auto_align_enabled') is not True:
+        raise ValueError('control.yaml의 execution.auto_align_enabled=true도 필요합니다.')
     for side in ('left', 'right'):
         if type(control['robots'][side]['model1300']) is not bool:
             raise ValueError(f'{side} model1300은 bool이어야 합니다.')
@@ -36,12 +38,12 @@ def arguments(argv):
     parser.add_argument('--arm', required=True, choices=('left', 'right', 'both'))
     parser.add_argument('--start-pose')
     parser.add_argument('--target-pose')
-    parser.add_argument('--step', choices=('pre_align_ready',), help='현재 실측 자세에서 auto_align 단계를 실행합니다.')
+    parser.add_argument('--step', choices=('pre_align_ready', 'vision_align'), help='현재 실측 자세에서 auto_align 단계를 실행합니다.')
     parser.add_argument('--no-rviz', action='store_true', help='GUI 없이 관절각·TF만 발행합니다.')
     args = parser.parse_args(argv)
     if args.step:
         if args.arm != 'both' or args.start_pose or args.target_pose:
-            parser.error('pre_align_ready는 --arm both를 사용하며 시작·목표 자세 인자를 받지 않습니다.')
+            parser.error('auto_align 단계는 --arm both를 사용하며 시작·목표 자세 인자를 받지 않습니다.')
     elif not args.start_pose or not args.target_pose:
         parser.error('--start-pose와 --target-pose는 모두 필수입니다.')
     return args
@@ -130,14 +132,21 @@ def main(argv=None):
     result = 1
     try:
         source = 'auto_align' if args.step else 'xarm_motion'
-        config_dir = settings('auto_align_enabled' if args.step else 'standalone_enabled')
+        gate = ('vision_align_enabled' if args.step == 'vision_align' else
+                'auto_align_enabled' if args.step else 'standalone_enabled')
+        config_dir = settings(gate)
         if not sys.stdin.isatty():
             raise ValueError('Enter·Ctrl+C 입력이 가능한 터미널에서 실행하세요.')
         expected_inputs = None
         if args.step:
             control_data = (config_dir / 'control.yaml').read_bytes()
             poses_data = (config_dir / 'arm_poses.yaml').read_bytes()
-            args.target_pose, goals = ready_target(yaml.safe_load(control_data), yaml.safe_load(poses_data))
+            if args.step == 'vision_align':
+                # Camera-frame goals have no calibrated world transform. Do not
+                # draw the old ready pose as if it were a visual-servo target.
+                goals = None
+            else:
+                args.target_pose, goals = ready_target(yaml.safe_load(control_data), yaml.safe_load(poses_data))
             expected_inputs = input_fingerprint(control_data, poses_data)
         else:
             poses = load_yaml(config_dir / 'arm_poses.yaml')

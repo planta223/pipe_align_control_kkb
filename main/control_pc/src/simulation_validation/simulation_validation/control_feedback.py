@@ -20,7 +20,7 @@ class ControlFeedback(Node):
             raise ValueError('지원하지 않는 제어 피드백입니다.')
         self.sides = sides
         self.frames = frames
-        self.goals = {side: goals[side] for side in sides}
+        self.goals = {} if goals is None else {side: goals[side] for side in sides}
         self.names = [f'{side}_joint{i}' for side in sides for i in range(1, 8)]
         self.latest = None
         self.received_at = None

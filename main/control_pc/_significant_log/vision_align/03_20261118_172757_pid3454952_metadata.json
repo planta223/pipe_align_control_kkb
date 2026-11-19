@@ -1,0 +1,43 @@
+{
+  "source_log": "auto_align_3454952_1794990477121.log",
+  "source_sha256": "6c4525eb103109ddd0018358138061b711ea9538442f817a009974a1cd1722d2",
+  "start_kst": "2026-11-18T17:27:57.829811+09:00",
+  "duration_s": 2.9321771990000003,
+  "measurements": 1,
+  "phases": [
+    {
+      "start_s": 0.0,
+      "phase": "STEP4",
+      "end_s": 2.9321771990000003
+    }
+  ],
+  "events": [
+    {
+      "source_line": 1,
+      "elapsed_s": 0.0,
+      "message": "RUNNING: STEP4: 좌우 비전 수신·끝단 표시 / 로봇 이동 없음"
+    },
+    {
+      "source_line": 3,
+      "elapsed_s": 2.9321771990000003,
+      "message": "STOPPED: 사용자가 비전 정렬을 중지했습니다."
+    }
+  ],
+  "end_message": "STOPPED: 사용자가 비전 정렬을 중지했습니다.",
+  "signed_position_error_definition": {
+    "frame": "camera coordinates",
+    "individual": "measured endpoint minus logged goal, Y/Z components in mm",
+    "relative": "right endpoint minus left endpoint, Y/Z components in mm"
+  },
+  "signed_angles_available": false,
+  "signed_angles_unavailable_reason": "Source logs contain angle magnitudes without axis vectors.",
+  "raw_camera_receive_period_available": false,
+  "source_measurement_interval_s": null,
+  "source_age_s": {
+    "count": 1,
+    "min": 0.281099,
+    "median": 0.281099,
+    "mean": 0.281099,
+    "max": 0.281099
+  }
+}
