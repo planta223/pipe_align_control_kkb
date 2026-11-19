@@ -135,7 +135,9 @@
     "relative": "right endpoint minus left endpoint, Y/Z components in mm"
   },
   "signed_angles_available": false,
-  "signed_angles_unavailable_reason": "Source logs contain angle magnitudes without axis vectors.",
+  "signed_angle_measurements": 0,
+  "signed_angle_definition": "atan2(sign*axis.y, sign*axis.x), atan2(sign*axis.z, sign*axis.x), degrees; relative = right minus left projected angles",
+  "signed_angles_unavailable_reason": "Some or all source measurements lack axis vectors; their signed angles remain unknown.",
   "raw_camera_receive_period_available": false,
   "source_measurement_interval_s": {
     "count": 36,

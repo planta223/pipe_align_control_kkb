@@ -3,8 +3,8 @@
 
 The source log contains averaged, stopped measurements, not every received
 camera frame. Never interpret the intervals below as camera reception rate.
-Position components retain their signs. Angular signs cannot be recovered from
-these logs: they contain angle magnitudes, not pipe axis vectors.
+Position components retain their signs. New logs include pipe axis vectors and
+signed projected angles; legacy logs without them retain unknown angular signs.
 """
 import argparse
 import csv
@@ -49,6 +49,25 @@ def vector(text, pattern, count):
     return result
 
 
+def axis_fields(text, side):
+    fields = {f'{side}_axis_{axis}': None for axis in 'xyz'}
+    fields.update({f'{side}_axis_sign': None,
+                   f'{side}_angle_xy_deg': None, f'{side}_angle_xz_deg': None})
+    if 'axis_camera=' not in text:
+        return fields
+    axis = vector(text, r'axis_camera=\[([^]]+)\]', 3)
+    sign = scalar(text, 'axis_sign') if 'axis_sign=' in text else (1 if axis[0] >= 0 else -1)
+    if sign not in (-1, 1):
+        raise ValueError(f'Invalid axis_sign: {sign}')
+    fields.update({f'{side}_axis_{name}': value for name, value in zip('xyz', axis)})
+    fields[f'{side}_axis_sign'] = sign
+    for index, plane in [(1, 'xy'), (2, 'xz')]:
+        key = f'angle_{plane}_deg'
+        fields[f'{side}_{key}'] = (scalar(text, key) if key + '=' in text else
+                                    math.degrees(math.atan2(sign*axis[index], sign*axis[0])))
+    return fields
+
+
 def read_log(path):
     raw = path.read_bytes()
     records = []
@@ -88,6 +107,11 @@ def extract(run):
         goal = vector(message, r'goal_yz_m=([^/]+)', 2)
         stamp = int(re.search(r'\bstamp=(\d+)', message)[1])
         left_text, right_text = message.split(' / right ', 1)
+        angular = {**axis_fields(left_text, 'left'), **axis_fields(right_text, 'right')}
+        for plane in ('xy', 'xz'):
+            left_angle, right_angle = (angular[f'{side}_angle_{plane}_deg'] for side in ('left', 'right'))
+            angular[f'relative_angle_{plane}_deg'] = (None if left_angle is None or right_angle is None
+                                                      else right_angle-left_angle)
         source_interval = None if previous_stamp is None else (stamp - previous_stamp) * 1e-9
         log_interval = None if previous_log is None else (ns - previous_log) * 1e-9
         if source_interval is not None and source_interval <= 0:
@@ -98,6 +122,7 @@ def extract(run):
             'left_angle_x_deg': scalar(left_text, 'axis_X_deg'),
             'right_angle_x_deg': scalar(right_text, 'axis_X_deg'),
             'relative_angle_deg': scalar(message, 'relative_angle_deg'),
+            **angular,
             'left_yz_error_mm': math.hypot(left[1]-goal[0], left[2]-goal[1])*1000,
             'right_yz_error_mm': math.hypot(right[1]-goal[0], right[2]-goal[1])*1000,
             'relative_yz_error_mm': math.hypot(left[1]-right[1], left[2]-right[2])*1000,
@@ -135,8 +160,11 @@ def draw(run, samples, phases, duration, stem, reference):
             break
     plt.rcParams.update({'axes.unicode_minus': False, 'font.size': 10,
                          'axes.spines.top': False, 'axes.spines.right': False})
-    fig, axes = plt.subplots(7, 1, figsize=(15, 18), sharex=True,
-                             gridspec_kw={'height_ratios': [1.25, 2.5, 2, 2, 2.3, 2, 1.8]})
+    has_signed_angles = any(s[f'{side}_angle_xy_deg'] is not None
+                            for s in samples for side in ('left', 'right'))
+    heights = [1.25, 2.5] + ([2, 2] if has_signed_angles else []) + [2, 2, 2.3, 2, 1.8]
+    fig, axes = plt.subplots(len(heights), 1, figsize=(15, 22 if has_signed_angles else 18), sharex=True,
+                             gridspec_kw={'height_ratios': heights})
     fig.subplots_adjust(left=.085, right=.97, top=.87, bottom=.12, hspace=.27)
     started = dt.datetime.fromtimestamp(run['start_ns']/1e9, KST)
     end_message = run['records'][-1][3]
@@ -161,14 +189,29 @@ def draw(run, samples, phases, duration, stem, reference):
     def series(ax, key, label, color, style='-'):
         ax.plot(times, [s[key] for s in samples], style, color=color,
                 marker='o', markersize=3.8, linewidth=1.35, label=label)
-    angle, signed_y, signed_z, position, cadence, age = axes[1:]
+    angle = axes[1]
+    signed_y, signed_z, position, cadence, age = axes[-5:]
+    signed_angle_axes = list(axes[2:4]) if has_signed_angles else []
     series(angle, 'left_angle_x_deg', '좌측 축–카메라 X축', '#2563eb')
     series(angle, 'right_angle_x_deg', '우측 축–카메라 X축', '#ea580c')
     series(angle, 'relative_angle_deg', '좌우 축 사이 상대 각도', '#334155', '--')
     angle.axhline(reference['angle_deg'], color='#dc2626', linestyle=':', label='각도 2° 참고선*')
     angle.set_ylabel('각도 오차 크기 (°)')
-    angle.set_title('좌·우 축 방향 오차 크기 (부호 없음: 원본 로그에 축 벡터가 없어 복원 불가)',
+    angle.set_title('좌·우 축 방향 오차 크기' + ('' if has_signed_angles else
+                    ' (부호 없음: 원본 로그에 축 벡터가 없어 복원 불가)'),
                     loc='left', fontsize=11)
+    for ax, plane in zip(signed_angle_axes, ('xy', 'xz')):
+        series(ax, f'left_angle_{plane}_deg', '좌측: +X 기준 투영각', '#2563eb')
+        series(ax, f'right_angle_{plane}_deg', '우측: +X 기준 투영각', '#ea580c')
+        series(ax, f'relative_angle_{plane}_deg', '상대 투영각 차이: 우측 − 좌측', '#334155', '--')
+        ax.axhline(0, color='#64748b', linewidth=1)
+        values = [abs(s[f'{side}_angle_{plane}_deg']) for s in samples
+                  for side in ('left', 'right', 'relative') if s[f'{side}_angle_{plane}_deg'] is not None]
+        extent = max([1] + values)*1.15
+        ax.set_ylim(-extent, extent)
+        ax.set_ylabel(f'{plane.upper()} 투영각 (°)')
+        ax.set_title(f'부호 있는 축 {plane.upper()} 투영각 (axis_sign으로 ±X 정규화 · 미기록 구간은 공백)',
+                     loc='left', fontsize=11)
     for ax, component in [(signed_y, 'y'), (signed_z, 'z')]:
         series(ax, f'left_{component}_error_mm', '좌측: 측정 − 목표', '#2563eb')
         series(ax, f'right_{component}_error_mm', '우측: 측정 − 목표', '#ea580c')
@@ -219,7 +262,7 @@ def draw(run, samples, phases, duration, stem, reference):
             if phase['start_s'] > 0:
                 ax.axvline(phase['start_s'], color=COLORS[phase['phase']], alpha=.8, linewidth=.8, zorder=-1)
         ax.axvline(duration, color='#dc2626', linestyle='--', linewidth=1)
-        if ax not in (signed_y, signed_z):
+        if ax not in [signed_y, signed_z] + signed_angle_axes:
             ax.set_ylim(bottom=0)
         ax.grid(True, alpha=.2)
         handles, _ = ax.get_legend_handles_labels()
@@ -227,7 +270,9 @@ def draw(run, samples, phases, duration, stem, reference):
             ax.legend(loc='upper left', fontsize=8, framealpha=.9)
     for ax in axes:
         ax.set_xlim(0, max(duration*1.015, 1))
-    fig.text(.085, .086, '부호: 개별 위치 = 측정 − 목표, 상대 위치 = 우측 − 좌측. 각도는 원본 로그에 부호 정보가 없습니다.', fontsize=9)
+    angle_note = ('각도 성분은 ±X 정규화 축의 XY/XZ 투영각입니다.' if has_signed_angles else
+                  '각도는 원본 로그에 부호 정보가 없습니다.')
+    fig.text(.085, .086, '부호: 개별 위치 = 측정 − 목표, 상대 위치 = 우측 − 좌측. ' + angle_note, fontsize=9)
     fig.text(.085, .071, '점은 정지 후 평균 측정값이며, 선은 점 사이 연결입니다. 운동 중 오차를 복원한 곡선은 아닙니다.', fontsize=9)
     fig.text(.085, .048, '* 참고선: 현재 설정의 2° / 3 mm / 5 mm. 당시 설정 스냅샷이 없어 실행 당시 임계치로 단정하지 않습니다.', fontsize=9)
     fig.text(.085, .025, '원본 프레임 수신 주기·Hz는 복원 불가. 영상 stamp 간격은 정지·이동·검증 대기를 포함한 평균 측정 결과 간격입니다.', fontsize=9)
@@ -269,9 +314,11 @@ def main():
         if destination.resolve() != run['path'].resolve():
             destination.write_bytes(run['raw'])
         samples, events, phases, duration = extract(run)
+        signed_count = sum(all(s[f'{side}_angle_xy_deg'] is not None for side in ('left', 'right'))
+                           for s in samples)
         with (OUT / f'{stem}_measurements.csv').open('w', newline='') as f:
             if samples:
-                writer = csv.DictWriter(f, fieldnames=list(samples[0]))
+                writer = csv.DictWriter(f, fieldnames=list(samples[0]), lineterminator='\n')
                 writer.writeheader()
                 writer.writerows(samples)
         metadata = {'source_log': run['path'].name, 'source_sha256': hashlib.sha256(run['raw']).hexdigest(),
@@ -282,8 +329,11 @@ def main():
                         'frame': 'camera coordinates',
                         'individual': 'measured endpoint minus logged goal, Y/Z components in mm',
                         'relative': 'right endpoint minus left endpoint, Y/Z components in mm'},
-                    'signed_angles_available': False,
-                    'signed_angles_unavailable_reason': 'Source logs contain angle magnitudes without axis vectors.',
+                    'signed_angles_available': bool(samples) and signed_count == len(samples),
+                    'signed_angle_measurements': signed_count,
+                    'signed_angle_definition': 'atan2(sign*axis.y, sign*axis.x), atan2(sign*axis.z, sign*axis.x), degrees; relative = right minus left projected angles',
+                    'signed_angles_unavailable_reason': (None if samples and signed_count == len(samples) else
+                        'Some or all source measurements lack axis vectors; their signed angles remain unknown.'),
                     'raw_camera_receive_period_available': False,
                     'source_measurement_interval_s': stats([s['source_measurement_interval_s'] for s in samples if s['source_measurement_interval_s'] is not None]),
                     'source_age_s': stats([s['source_age_s'] for s in samples])}
@@ -296,7 +346,9 @@ def main():
     (OUT / 'analysis_notes.txt').write_text(
         '최신 vision_align 실행 3개: 첫 로그 시각 기준 내림차순. vision_measure와 pre_align_ready 제외.\n'
         '이동 전에 중지된 실행도 생략하지 않았다. 세 번째 실행은 측정 1회이며 주기 계산 불가.\n'
-        '좌우 각도: 각 파이프 축과 카메라 X축의 예각 및 상대 각도의 크기. 원본 로그에 축 벡터가 없어 부호 복원 불가.\n'
+        '좌우 각도 크기: 각 파이프 축과 카메라 X축의 예각 및 상대 각도.\n'
+        '부호 있는 각도: 새 로그의 axis_camera와 axis_sign 및 angle_xy_deg/angle_xz_deg를 사용. 없는 과거 측정은 공란이며 복원 불가.\n'
+        '상대 각도 성분은 우측 − 좌측 투영각 차이이며, 3D 상대 각도 크기와 다름. 측정별 가용 여부는 CSV, 전체 여부는 metadata에 기록.\n'
         '부호 있는 개별 위치: 카메라 좌표계에서 측정 끝단 − 각 로그의 goal_yz_m. Y와 Z를 별도 표시, 단위 mm.\n'
         '부호 있는 상대 위치: 우측 끝단 − 좌측 끝단. 원본 로그의 delta_yz_mm와 같은 부호 규칙.\n'
         'CSV: left/right_y/z_error_mm는 개별 성분, relative_y/z_error_mm는 상대 성분. 기존 yz_error_mm는 크기.\n'

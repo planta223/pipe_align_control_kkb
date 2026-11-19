@@ -1,6 +1,8 @@
 최신 vision_align 실행 3개: 첫 로그 시각 기준 내림차순. vision_measure와 pre_align_ready 제외.
 이동 전에 중지된 실행도 생략하지 않았다. 세 번째 실행은 측정 1회이며 주기 계산 불가.
-좌우 각도: 각 파이프 축과 카메라 X축의 예각 및 상대 각도의 크기. 원본 로그에 축 벡터가 없어 부호 복원 불가.
+좌우 각도 크기: 각 파이프 축과 카메라 X축의 예각 및 상대 각도.
+부호 있는 각도: 새 로그의 axis_camera와 axis_sign 및 angle_xy_deg/angle_xz_deg를 사용. 없는 과거 측정은 공란이며 복원 불가.
+상대 각도 성분은 우측 − 좌측 투영각 차이이며, 3D 상대 각도 크기와 다름. 측정별 가용 여부는 CSV, 전체 여부는 metadata에 기록.
 부호 있는 개별 위치: 카메라 좌표계에서 측정 끝단 − 각 로그의 goal_yz_m. Y와 Z를 별도 표시, 단위 mm.
 부호 있는 상대 위치: 우측 끝단 − 좌측 끝단. 원본 로그의 delta_yz_mm와 같은 부호 규칙.
 CSV: left/right_y/z_error_mm는 개별 성분, relative_y/z_error_mm는 상대 성분. 기존 yz_error_mm는 크기.

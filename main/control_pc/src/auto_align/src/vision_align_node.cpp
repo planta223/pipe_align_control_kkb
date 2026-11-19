@@ -12,6 +12,7 @@
 #include <csignal>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <cmath>
 #include <sstream>
@@ -193,7 +194,7 @@ private:
     }
   }
   void diagnostic(const VisionPair& pair) {
-    std::ostringstream out; out<<"stamp="<<pair.stamp;
+    std::ostringstream out; out<<std::setprecision(12)<<"stamp="<<pair.stamp<<" frame_id="<<s_.frame;
     visualization_msgs::msg::MarkerArray markers;
     auto marker=[&](int id,const Eigen::Vector3d& p,const Eigen::Vector3d& end,bool target) {
       visualization_msgs::msg::Marker m; m.header.frame_id=s_.frame; m.header.stamp=now(); m.ns="vision_axes";m.id=id;
@@ -205,8 +206,14 @@ private:
     };
     for(size_t i=0;i<2;++i) {
       const auto& p=pair.pipes[i];
+      // Match the controller's initial +/-X convention without changing its state.
+      const double sign=(baseline_?baseline_->pipes[i].axis.x():p.axis.x())>=0?1:-1;
+      const Eigen::Vector3d a=sign*p.axis;
       out<<" / "<<(i==0?"left":"right")<<" endpoint_m=["<<p.endpoint.transpose()<<"] CAD_z="<<s_.endpoint_z[i]
-         <<" axis_X_deg="<<std::acos(std::clamp(std::abs(p.axis.x()),0.,1.))*180/std::acos(-1.);
+         <<" axis_X_deg="<<std::acos(std::clamp(std::abs(p.axis.x()),0.,1.))*180/std::acos(-1.)
+         <<" axis_camera=["<<p.axis.transpose()<<"] axis_sign="<<sign
+         <<" angle_xy_deg="<<std::atan2(a.y(),a.x())*180/std::acos(-1.)
+         <<" angle_xz_deg="<<std::atan2(a.z(),a.x())*180/std::acos(-1.);
       marker(i,p.endpoint,p.endpoint+.1*p.axis,false);
     }
     const Eigen::Vector3d center=baseline_?(baseline_->pipes[0].endpoint+baseline_->pipes[1].endpoint)/2:

@@ -94,6 +94,12 @@ ros2 run auto_align auto_align --step vision_measure
 ```
 
 `/auto_align/vision_diagnostics`에 끝단 위치·CAD 끝단·각도·상대 Y/Z 차이·영상 나이를 발행한다.
+같은 `VISION:` 로그에 카메라 좌표계 이름(`frame_id`), 좌우 CAD Z축 단위 벡터(`axis_camera=[x y z]`),
+축 방향 정규화 부호(`axis_sign`), 부호 있는 `angle_xy_deg`·`angle_xz_deg`도 기록한다.
+`a = axis_sign * axis_camera`에 대해 각각 `atan2(a.y, a.x)`·`atan2(a.z, a.x)`를 도 단위로 표시한다.
+정렬 중에는 제어 시작 평균 측정의 ±X 부호를 사용하며, 읽기 전용 `vision_measure`에서는 각 측정의 ±X 부호를 사용한다.
+기존 `axis_X_deg`와 `relative_angle_deg`는 평행도 판정을 위한 부호 없는 각도 크기로 유지한다.
+축 벡터가 없는 과거 로그에서는 각도 부호를 복원할 수 없다.
 `/auto_align/vision_markers`에는 양쪽 축(초록/파랑)과 목표 X축(노랑)을 카메라 frame으로 발행한다.
 RViz에서 이를 보려면 Fixed Frame을 `camera_left_optical_frame`으로 하고 MarkerArray display를 추가한다.
 카메라 외부 캘리브레이션이 없으므로 world와 카메라 사이 TF를 임의로 만들지 않는다.
