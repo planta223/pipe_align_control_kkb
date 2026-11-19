@@ -10,7 +10,7 @@ pre_align_ready:
   # arm_poses.yaml의 목표 이름. 변경 후 실행기를 다시 시작한다.
   target_pose: pre_align_ready_v2
   collision_margin_m: 0.02
-  collision_check_interval_s: 0.05
+  collision_check_interval_s: 0.1
   collision_minimum_interval_s: 0.0001
 
 robots:
@@ -33,7 +33,7 @@ limits:
   joint_step_dt_cap_s: 0.004
   joint_tracking_error_rad: 0.05
   # init.cc의 25 deg/s²를 새 경로의 가속도 제한에 적용한다.
-  joint_acceleration_rad_s2: 0.436332312999
+  joint_acceleration_rad_s2: 0.65
 
 # 아래는 새 제어기에 적용하는 초기값이며 실물 검증 전이다.
 validation:
