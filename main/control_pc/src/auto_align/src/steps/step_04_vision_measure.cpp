@@ -1,6 +1,8 @@
 #include "auto_align/vision_align.hpp"
 #include <Eigen/SVD>
 #include <cmath>
+#include <sstream>
+#include <iomanip>
 
 namespace auto_align {
 namespace {
@@ -36,6 +38,12 @@ VisionSettings vision_settings(const YAML::Node& control) {
   s.min_samples=n["minimum_samples"].as<int>(); s.max_iterations=n["max_stage_iterations"].as<int>();
   s.success_samples=n["minimum_success_samples"].as<int>();
   s.max_moves=n["max_moves"].as<int>(); s.max_worsening=n["max_worsening"].as<int>();
+  if(n["retry_rotation_rad"]) s.retry_rotation=positive(n,"retry_rotation_rad");
+  if(n["rotation_linear_speed_m_s"]) s.rotation_linear_speed=positive(n,"rotation_linear_speed_m_s");
+  if(n["minimum_response_snr"]) s.minimum_response_snr=positive(n,"minimum_response_snr");
+  if(n["max_untrusted_responses"]) s.max_untrusted_responses=n["max_untrusted_responses"].as<int>();
+  require(s.retry_rotation>=s.probe_rotation && s.retry_rotation<=.05235987756+1e-10 &&
+    s.minimum_response_snr>=3 && s.max_untrusted_responses>0,"시험 재시도·응답 품질 설정이 유효하지 않습니다.");
   const auto cache=n["cache"];
   if(cache) {
     s.cache_enabled=cache["enabled"].as<bool>();
@@ -56,6 +64,11 @@ VisionSettings vision_settings(const YAML::Node& control) {
     s.angle_tolerance<.2 && s.max_turn<1.0 && s.max_position_noise<s.position_tolerance && s.max_angle_noise<s.angle_tolerance,
     "비전 설정의 시간·이동량·허용값 조합이 유효하지 않습니다.");
   return s;
+}
+xm::Limits vision_motion_limits(xm::Limits limits,const VisionSettings& s,bool rotation) {
+  limits.linear_speed=std::min(limits.linear_speed,rotation?s.rotation_linear_speed:s.linear_speed);
+  limits.angular_speed=std::min(limits.angular_speed,s.angular_speed);
+  return limits;
 }
 void require_vision_enabled(const YAML::Node& control) {
   const auto n=control["execution"]["vision_align_enabled"];
@@ -90,6 +103,7 @@ VisionPair average_pairs(const std::vector<VisionPair>& samples,const VisionSett
   require((samples.back().stamp-samples.front().stamp)*1e-9>=s.sample_window,"측정 시간창이 부족합니다.");
   for(size_t i=1;i<samples.size();++i) require(samples[i].stamp>samples[i-1].stamp,"중복·역순 영상은 평균에 사용할 수 없습니다.");
   VisionPair out=samples.back();
+  bool quality_ok=true;
   for(size_t side=0;side<2;++side) {
     Eigen::Vector3d p=Eigen::Vector3d::Zero(),a=Eigen::Vector3d::Zero();
     for(const auto& pair:samples) {
@@ -103,13 +117,22 @@ VisionPair average_pairs(const std::vector<VisionPair>& samples,const VisionSett
       const double angle=std::acos(std::clamp(a.dot(pair.pipes[side].axis),-1.,1.));
       angle_variance+=angle*angle;
     }
-    require(std::sqrt(position_variance/samples.size())<=s.max_position_noise &&
-      std::sqrt(angle_variance/samples.size())<=s.max_angle_noise,"정지 상태의 비전 변동이 허용 범위를 넘었습니다.");
+    out.position_rms[side]=std::sqrt(position_variance/samples.size());
+    out.angle_rms[side]=std::sqrt(angle_variance/samples.size());
+    quality_ok &= out.position_rms[side]<=s.max_position_noise && out.angle_rms[side]<=s.max_angle_noise;
     out.pipes[side]={p,a};
     out.position_error[side]=std::max(std::sqrt(position_variance)/samples.size(),
       .5*(samples.back().pipes[side].endpoint-samples.front().pipes[side].endpoint).norm());
     out.angle_error[side]=std::max(std::sqrt(angle_variance)/samples.size(),.5*std::acos(std::clamp(
       samples.back().pipes[side].axis.dot(samples.front().pipes[side].axis),-1.,1.)));
+  }
+  if(!quality_ok) {
+    std::ostringstream message;message<<std::setprecision(9)<<"정지 상태의 비전 변동이 허용 범위를 넘었습니다. samples="<<samples.size()
+      <<" first_stamp="<<samples.front().stamp<<" last_stamp="<<samples.back().stamp;
+    for(size_t side=0;side<2;++side) message<<" / "<<(side==0?"left":"right")
+      <<" position_rms_m="<<out.position_rms[side]<<" limit_m="<<s.max_position_noise
+      <<" angle_rms_rad="<<out.angle_rms[side]<<" limit_rad="<<s.max_angle_noise;
+    throw std::runtime_error(message.str());
   }
   return out;
 }

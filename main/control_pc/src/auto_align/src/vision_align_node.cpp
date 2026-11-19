@@ -42,8 +42,6 @@ public:
   }
   void attach(std::array<xm::XArmBackend*,2> backends,std::array<xm::ArmKinematics*,2> models,CollisionChecker* checker,xm::Limits limits) {
     robots_=backends; models_=models; checker_=checker; limits_=limits;
-    limits_.linear_speed=std::min(limits_.linear_speed,s_.linear_speed);
-    limits_.angular_speed=std::min(limits_.angular_speed,s_.angular_speed);
     limits_.arrival_position=std::min(limits_.arrival_position,.0005);
     limits_.arrival_orientation=std::min(limits_.arrival_orientation,.003);
     limits_.arrival_joint=std::min(limits_.arrival_joint,.001);
@@ -89,14 +87,26 @@ public:
   void start_control() { begun_=xm::steady_seconds(); cutoff_=now().nanoseconds()+static_cast<int64_t>(s_.settle*1e9); }
   VisionPair measure() override {
     const double started=xm::steady_seconds(); std::vector<VisionPair> samples;
+    double first_sample_at=0;
     int64_t consumed=last_measurement_;
     while(true) {
       service();
       require(xm::steady_seconds()-started<=s_.sample_timeout,"새 정지 영상의 좌우 쌍을 충분히 받지 못했습니다.");
       if(latest_ && latest_->stamp>std::max(cutoff_,consumed) && now().seconds()-latest_->stamp*1e-9<=s_.max_age) {
+        if(samples.empty()) first_sample_at=xm::steady_seconds();
         samples.push_back(*latest_); consumed=latest_->stamp;
         if(samples.size()>=static_cast<size_t>(s_.min_samples) && (samples.back().stamp-samples.front().stamp)*1e-9>=s_.sample_window) {
-          auto pair=average_pairs(samples,s_); last_measurement_=pair.stamp;
+          VisionPair pair;
+          try { pair=average_pairs(samples,s_); }
+          catch(const std::exception& e) {
+            RCLCPP_ERROR(get_logger(),"PERF: VISION_MEASURE result=rejected total_s=%.6f first_valid_wait_s=%.6f collection_s=%.6f %s",
+              xm::steady_seconds()-started,first_sample_at-started,xm::steady_seconds()-first_sample_at,e.what());
+            throw;
+          }
+          RCLCPP_INFO(get_logger(),"PERF: VISION_MEASURE result=accepted total_s=%.6f first_valid_wait_s=%.6f collection_s=%.6f samples=%zu window_s=%.6f left_position_rms_m=%.9f left_angle_rms_rad=%.9f right_position_rms_m=%.9f right_angle_rms_rad=%.9f",
+            xm::steady_seconds()-started,first_sample_at-started,xm::steady_seconds()-first_sample_at,samples.size(),
+            (samples.back().stamp-samples.front().stamp)*1e-9,pair.position_rms[0],pair.angle_rms[0],pair.position_rms[1],pair.angle_rms[1]);
+          last_measurement_=pair.stamp;
           if(begun_!=0) watching_=true;
           if(!baseline_ && begun_!=0) baseline_=pair;
           diagnostic(pair); return pair;
@@ -117,11 +127,18 @@ public:
     }
   }
   Eigen::Vector3d move(size_t selected,const Eigen::Vector3d& delta,bool rotation) override {
-    require(robots_[0] && checker_ && delta.allFinite() && delta.norm()<=
-      std::max(rotation?s_.probe_rotation:s_.probe_translation,rotation?s_.max_rotation:s_.max_translation)*1.1,"보정 명령 범위가 유효하지 않습니다.");
+    require(selected<2 && robots_[0] && checker_ && delta.allFinite() && delta.norm()<=
+      std::max(rotation?s_.retry_rotation:s_.probe_translation,rotation?s_.max_rotation:s_.max_translation)*1.000001,"보정 명령 범위가 유효하지 않습니다.");
+    const double started=xm::steady_seconds();const auto motion_limits=vision_motion_limits(limits_,s_,rotation);
+    const int sequence=++move_sequence_;
+    std::ostringstream request;
+    request<<"VISION_MOVE_REQUEST: id="<<sequence<<" side="<<(selected==0?"left":"right")
+      <<" kind="<<(rotation?"rotation":"translation")<<" requested=["<<delta.transpose()<<"]";
+    report(request.str());
     service();
     std::array<xm::Feedback,2> before{robots_[0]->read(),robots_[1]->read()};
     std::vector<xm::MotionArm> arms;
+    std::array<double,2> planning{};
     for(size_t i=0;i<2;++i) {
       require(before[i].velocities.cwiseAbs().maxCoeff()<=limits_.stationary_speed,"정지 후에만 새 보정 경로를 계산합니다.");
       const auto tcp=xm::tcp_transform(frames_,i==0?"left":"right");
@@ -133,15 +150,19 @@ public:
       require((target.translation()-initial_tcp_[i].translation()).norm()<=s_.max_travel &&
         xm::rotation_error(target,initial_tcp_[i])<=s_.max_turn,"TCP 누적 보정 범위를 넘었습니다.");
       xm::SdkKinematics kinematics(*robots_[i],*models_[i],tcp);
-      auto plan=std::make_unique<xm::MotionPlan>(kinematics,before[i].joints,target*tcp.inverse(),tcp,limits_);
+      const double plan_started=xm::steady_seconds();
+      auto plan=std::make_unique<xm::MotionPlan>(kinematics,before[i].joints,target*tcp.inverse(),tcp,motion_limits);
+      planning[i]=xm::steady_seconds()-plan_started;
       arms.push_back({i==0?"left":"right",robots_[i],models_[i],tcp,before[i].base_T_tcp*tcp.inverse(),target*tcp.inverse(),before[i],std::move(plan)});
     }
     const double duration=std::max(arms[0].plan->duration(),arms[1].plan->duration());
+    const double collision_started=xm::steady_seconds();
     checker_->check_path_joint_bounds([&](double t)->DualJoints {
       return {arms[0].plan->sample(t/duration),arms[1].plan->sample(t/duration)};
     },duration,{arms[0].plan->joint_speed_bounds(),arms[1].plan->joint_speed_bounds()},[this]{return cancelled();});
     RCLCPP_INFO(get_logger(),"PERF: COLLISION phase=vision_move %s",checker_->diagnostics().c_str());
-    xm::MotionSession session(std::move(arms),limits_,[this]{return cancelled();});
+    const double collision_s=xm::steady_seconds()-collision_started;
+    xm::MotionSession session(std::move(arms),motion_limits,[this]{return cancelled();});
     session.set_start_path_validator([&](const std::vector<xm::MotionArm>& connected,
                                         double path_seconds,double connection_seconds) {
       report("START_CONNECTION: 새 시작 연결 구간만 충돌 재검사 / 기존 경로 검사 결과 재사용");
@@ -155,12 +176,17 @@ public:
       });
       RCLCPP_INFO(get_logger(),"PERF: COLLISION phase=start_connection %s",checker_->diagnostics().c_str());
     });
+    const double prepare_started=xm::steady_seconds();
     session.prepare_planned(xm::steady_seconds()); service();
+    const double prepare_s=xm::steady_seconds()-prepare_started;
+    const double planned_s=session.duration();double begin_s=0,execute_s=0;
     executing_=true;
     try {
-      session.begin(xm::steady_seconds());
+      const double begin_started=xm::steady_seconds();
+      session.begin(xm::steady_seconds());begin_s=xm::steady_seconds()-begin_started;
       if(session.start_connection_duration()>0) report("START_CONNECTION: "+session.diagnostics());
       auto next=std::chrono::steady_clock::now();
+      const double execute_started=xm::steady_seconds();
       while(true) {
         service();
         next+=std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(limits_.period()));
@@ -171,14 +197,23 @@ public:
         next=std::max(next,std::chrono::steady_clock::now());
       }
       session.stop(); executing_=false;
+      execute_s=xm::steady_seconds()-execute_started;
     } catch(...) { executing_=false; throw; }
     const auto after=robots_[selected]->read();
     cutoff_=now().nanoseconds()+static_cast<int64_t>(s_.settle*1e9);
+    Eigen::Vector3d actual;
     if(rotation) {
       Eigen::AngleAxisd aa(after.base_T_tcp.linear()*before[selected].base_T_tcp.linear().transpose());
-      return aa.angle()*aa.axis();
-    }
-    return after.base_T_tcp.translation()-before[selected].base_T_tcp.translation();
+      actual=aa.angle()*aa.axis();
+    } else actual=after.base_T_tcp.translation()-before[selected].base_T_tcp.translation();
+    std::ostringstream result;
+    result<<"PERF: VISION_MOVE id="<<sequence<<" side="<<(selected==0?"left":"right")<<" kind="<<(rotation?"rotation":"translation")
+      <<" total_s="<<xm::steady_seconds()-started<<" left_plan_s="<<planning[0]<<" right_plan_s="<<planning[1]
+      <<" collision_s="<<collision_s<<" prepare_s="<<prepare_s<<" begin_s="<<begin_s<<" execute_including_hold_s="<<execute_s
+      <<" planned_s="<<planned_s<<" start_connection_s="<<session.start_connection_duration()<<" arrival_hold_s="<<motion_limits.arrival_hold
+      <<" linear_m_s="<<motion_limits.linear_speed<<" angular_rad_s="<<motion_limits.angular_speed
+      <<" requested=["<<delta.transpose()<<"] actual=["<<actual.transpose()<<"] delta_error="<<(actual-delta).norm();
+    RCLCPP_INFO(get_logger(),"%s",result.str().c_str());return actual;
   }
 private:
   void receive(size_t side,const geometry_msgs::msg::PoseStamped& m) {
@@ -251,6 +286,7 @@ private:
   }
   VisionSettings s_;YAML::Node frames_;VisionPairs pairs_;std::optional<VisionPair> latest_,baseline_;
   int64_t last_measurement_=0,cutoff_=0;double begun_=0,last_feedback_=0;bool watching_=false,servicing_=false,executing_=false;
+  int move_sequence_=0;
   std::array<xm::XArmBackend*,2> robots_{};std::array<xm::ArmKinematics*,2> models_{};
   std::array<xm::Pose,2> initial_tcp_;CollisionChecker* checker_=nullptr;xm::Limits limits_{};
   std::array<rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr,2> subs_;
@@ -278,6 +314,10 @@ int vision_align_main(int argc,char** argv) {
     const auto logs=root/"_log/auto_align";std::filesystem::create_directories(logs);setenv("ROS_LOG_DIR",logs.c_str(),1);
     rclcpp::init(0,nullptr,rclcpp::InitOptions(),rclcpp::SignalHandlerOptions::None);
     node=std::make_shared<VisionRuntime>(settings,frames,readonly);
+    YAML::Node snapshot;snapshot["vision_align"]=control["vision_align"];
+    snapshot["limits"]=control["limits"];snapshot["validation"]=control["validation"];
+    YAML::Emitter configuration;configuration<<YAML::Flow<<snapshot;
+    node->report("VISION_CONFIG: "+std::string(configuration.c_str()));
     node->report("STEP4: 좌우 비전 수신·끝단 표시 / 로봇 이동 없음");node->measure();
     if(readonly) { while(!interrupted && rclcpp::ok()) node->measure(); }
     else {
@@ -301,7 +341,7 @@ int vision_align_main(int argc,char** argv) {
       identity["model_fingerprint"]=input_fingerprint(read_file(urdfs[0]),read_file(urdfs[1]));
       for(const auto* key:{"left_topic","right_topic","frame_id","pipe_length_m","left_endpoint_z_m","right_endpoint_z_m"})
         identity[key]=control["vision_align"][key];
-      identity["context_id"]=settings.cache_context;identity["feature_version"]=1;
+      identity["context_id"]=settings.cache_context;identity["feature_version"]=2;
       const auto mesh=root.parent_path().parent_path()/"docs/vision_pc/pipe1.obj";
       const auto mesh_text=std::filesystem::exists(mesh)?read_file(mesh):"no-local-mesh";
       VisionCache cache(root/"_state/vision_align/jacobians.yaml",input_fingerprint(YAML::Dump(identity),mesh_text),settings);

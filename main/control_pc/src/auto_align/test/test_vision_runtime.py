@@ -142,3 +142,47 @@ def test_old_images_never_produce_a_measurement(monkeypatch):
     assert child.returncode == 1, output
     assert 'VISION:' not in output
     assert '새 정지 영상' in output
+
+
+def test_noisy_window_reports_rejected_timing_and_both_arm_rms_without_sdk(monkeypatch):
+    monkeypatch.setenv('ROS_DOMAIN_ID', '119')
+    monkeypatch.setenv('ROS_LOCALHOST_ONLY', '1')
+    context = rclpy.context.Context()
+    rclpy.init(context=context)
+    node = rclpy.create_node('noisy_pipe_source', context=context)
+    executor = SingleThreadedExecutor(context=context)
+    executor.add_node(node)
+    publishers = [node.create_publisher(PoseStamped, '/vision/' + side + '_pipe/pose',
+                                       qos_profile_sensor_data) for side in ('left', 'right')]
+    child = subprocess.Popen([executable(), '--step', 'vision_measure'], stdin=subprocess.DEVNULL,
+                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    try:
+        started = next_frame = time.monotonic()
+        frame = 0
+        while time.monotonic() - started < 6 and child.poll() is None:
+            if time.monotonic() >= next_frame:
+                stamp = node.get_clock().now().to_msg()
+                for side, publisher in enumerate(publishers):
+                    m = PoseStamped()
+                    m.header.stamp = stamp
+                    m.header.frame_id = 'camera_left_optical_frame'
+                    m.pose.position.x = -.1 if side == 0 else .1
+                    m.pose.position.z = .4 + (.02 if frame % 2 else -.02)
+                    m.pose.orientation.w = 1.0
+                    publisher.publish(m)
+                frame += 1
+                next_frame = time.monotonic() + 1 / 12
+            executor.spin_once(timeout_sec=.01)
+    finally:
+        if child.poll() is None:
+            child.send_signal(signal.SIGINT)
+        output, _ = child.communicate(timeout=5)
+        executor.shutdown()
+        node.destroy_node()
+        context.shutdown()
+    assert child.returncode == 1, output
+    assert 'PERF: VISION_MEASURE result=rejected' in output
+    assert 'first_valid_wait_s=' in output and 'collection_s=' in output
+    assert 'left position_rms_m=' in output and 'right position_rms_m=' in output
+    assert 'angle_rms_rad=' in output and 'limit_rad=' in output
+    assert 'SDK_VERSION' not in output

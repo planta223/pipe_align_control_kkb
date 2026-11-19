@@ -10,7 +10,12 @@ namespace aa=auto_align;
 namespace xm=xarm_motion;
 namespace {
 YAML::Node config() { return YAML::LoadFile((std::filesystem::path(TEST_CONTROL_PC_DIR)/"config/control.yaml").string()); }
-aa::VisionSettings settings() { return aa::vision_settings(config()); }
+aa::VisionSettings settings() {
+  auto s=aa::vision_settings(config());
+  // The synthetic scene uses inward +X/-X CAD axes, independently of the
+  // physical grasp/endpoint selected in the deployment configuration.
+  s.endpoint_z={s.length,s.length};return s;
+}
 aa::PipeObservation pipe(Eigen::Vector3d p,Eigen::Vector3d a=Eigen::Vector3d::UnitX()) { return {p,a}; }
 aa::VisionPair sample(int64_t stamp) { return {{pipe({-.1,0,.4}),pipe({.1,0,.4},-Eigen::Vector3d::UnitX())},stamp,0}; }
 class Scene final : public aa::VisionIO {
@@ -25,24 +30,33 @@ public:
     for(size_t i=0;i<2;++i) offsets[i]=.12*state.pipes[i].axis;
   }
   aa::VisionPair measure() override {
+    ++measurements;
     clock+=std::max(.8,3*period);
     if(!duplicate) state.stamp=static_cast<int64_t>((100+clock)*1e9);
     if(dropout && commands>0) throw std::runtime_error("synthetic tracking lost");
     auto measured=state;
     measured.position_error.fill(position_error);measured.angle_error.fill(angle_error);
+    if(commands>0 && commands<=uncertain_until) {
+      measured.position_error.fill(.002);measured.angle_error.fill(.02);
+    }
     if(noisy) for(size_t i=0;i<2;++i) {
       const double n=std::sin(clock*7+i);
       measured.pipes[i].endpoint+=.0002*n*Eigen::Vector3d(1,-1,1);
       measured.pipes[i].axis=Eigen::AngleAxisd(.001*n,Eigen::Vector3d::UnitY())*measured.pipes[i].axis;
+      measured.position_error[i]=std::max(measured.position_error[i],.0002);
+      measured.angle_error[i]=std::max(measured.angle_error[i],.001);
     }
     return measured;
   }
   Eigen::Vector3d move(size_t side,const Eigen::Vector3d& u,bool rotation) override {
     ++commands;clock+=1;
+    requests.push_back(u);
+    const auto previous_axis=state.pipes[side].axis;
     if(commands==change_after) bases[0]=Eigen::AngleAxisd(.8,Eigen::Vector3d::UnitX()).toRotationMatrix()*bases[0];
     const Eigen::Vector3d actual=actual_scale*u;
     if(rotation) {
-      const Eigen::Matrix3d r=bases[side]*Eigen::AngleAxisd(actual.norm(),actual.normalized()).toRotationMatrix()*bases[side].transpose();
+      const Eigen::Vector3d effective=actual.cwiseProduct(rotation_response_scale[side]);
+      const Eigen::Matrix3d r=bases[side]*Eigen::AngleAxisd(effective.norm(),effective.normalized()).toRotationMatrix()*bases[side].transpose();
       state.pipes[side].endpoint+=(r-Eigen::Matrix3d::Identity())*offsets[side];
       offsets[side]=r*offsets[side];state.pipes[side].axis=r*state.pipes[side].axis;
     } else if(!singular) {
@@ -52,7 +66,7 @@ public:
         disturb_translation=false;
       }
     }
-    return actual;
+    axis_changes.push_back((state.pipes[side].axis-previous_axis).norm());return actual;
   }
   std::optional<xm::Pose> tcp_pose(size_t side) override { return tcp[side]; }
   double elapsed() const override { return clock; }
@@ -60,13 +74,18 @@ public:
   aa::VisionPair state;
   std::array<Eigen::Matrix3d,2> bases;
   std::array<Eigen::Vector3d,2> offsets;
+  std::array<Eigen::Vector3d,2> rotation_response_scale{Eigen::Vector3d::Ones(),Eigen::Vector3d::Ones()};
   std::array<xm::Pose,2> tcp{xm::Pose::Identity(),xm::Pose::Identity()};
   std::vector<std::string> reports;
+  std::vector<Eigen::Vector3d> requests;
+  std::vector<double> axis_changes;
   double clock=0,period;
   double actual_scale=1;
   double position_error=0,angle_error=0;
   int commands=0;
+  int measurements=0;
   int change_after=-1;
+  int uncertain_until=0;
   bool singular=false,dropout=false,duplicate=false,noisy=false,disturb_translation=false;
 };
 struct CacheFile {
@@ -89,6 +108,15 @@ TEST(VisionConfig, GateAndBoundsAreIndependentOfReadyGate) {
   c=YAML::Load("execution: {vision_align_enabled: 'true'}");EXPECT_THROW(aa::require_vision_enabled(c),std::runtime_error);
   c=config();c["vision_align"]["probe_translation_m"]=.1;EXPECT_THROW(aa::vision_settings(c),std::runtime_error);
   c=config();c["vision_align"]["left_endpoint_z_m"]=.158;EXPECT_THROW(aa::vision_settings(c),std::runtime_error);
+  c=config();c["vision_align"]["retry_rotation_rad"]=.07;EXPECT_THROW(aa::vision_settings(c),std::runtime_error);
+}
+TEST(VisionConfig, RotationPlanningSpeedIsSeparateAndRespectsSharedLimits) {
+  auto common=xm::read_config(config()).limits;const auto s=settings();
+  const auto rotation=aa::vision_motion_limits(common,s,true),translation=aa::vision_motion_limits(common,s,false);
+  EXPECT_DOUBLE_EQ(rotation.linear_speed,.01);EXPECT_DOUBLE_EQ(translation.linear_speed,.005);
+  EXPECT_DOUBLE_EQ(rotation.arrival_hold,common.arrival_hold);
+  EXPECT_DOUBLE_EQ(rotation.angular_speed,translation.angular_speed);
+  common.linear_speed=.003;EXPECT_DOUBLE_EQ(aa::vision_motion_limits(common,s,true).linear_speed,.003);
 }
 TEST(VisionGeometry, CadEndpointAndZAxisBecomeCameraCoordinates) {
   xm::Pose pose=xm::Pose::Identity();pose.linear()=Eigen::AngleAxisd(std::acos(-1.)/2,Eigen::Vector3d::UnitY()).toRotationMatrix();
@@ -132,6 +160,21 @@ TEST(VisionPairs, DriftUncertaintyDoesNotDisappearWithManyCorrelatedSamples) {
   EXPECT_NEAR(mean.position_error[0],.001,1e-12);
   EXPECT_NEAR(mean.angle_error[0],.0025,1e-10);
 }
+TEST(VisionPairs, RejectedWindowReportsBothArmsAndBothRmsLimits) {
+  auto s=settings();std::vector<aa::VisionPair> samples;
+  for(int i=0;i<5;++i) {
+    auto pair=sample(int64_t((100+i*.3)*1e9));
+    pair.pipes[0].endpoint.y()=i%2?.02:-.02;
+    pair.pipes[1].axis=Eigen::AngleAxisd(i%2?.1:-.1,Eigen::Vector3d::UnitZ())*pair.pipes[1].axis;
+    samples.push_back(pair);
+  }
+  try {aa::average_pairs(samples,s);FAIL()<<"noisy window accepted";}
+  catch(const std::runtime_error& e) {
+    const std::string message=e.what();
+    for(const char* key:{"left position_rms_m=","right position_rms_m=","angle_rms_rad=","limit_m=","limit_rad=","first_stamp=","last_stamp="})
+      EXPECT_NE(message.find(key),std::string::npos)<<message;
+  }
+}
 TEST(VisionController, BothArmsConvergeWithUnknownDifferentBasesAtVariableRates) {
   for(double hz:{3.,10.,25.}) {
     Scene io(hz);auto s=settings();s.deadline=600;
@@ -163,7 +206,13 @@ TEST(VisionController, SingularTranslationAndMovementBudgetFailClosed) {
 }
 TEST(VisionController, NoiseAndTranslationDisturbanceKeepTargetAndReturnToRotation) {
   Scene io;io.noisy=true;io.disturb_translation=true;auto s=settings();s.deadline=600;
-  aa::VisionAlign controller(s,io);EXPECT_NO_THROW(controller.run());
+  aa::VisionAlign controller(s,io);
+  try { controller.run(); }
+  catch(const std::exception& e) {
+    std::string detail;
+    for(size_t i=io.reports.size()>8?io.reports.size()-8:0;i<io.reports.size();++i) detail+=io.reports[i]+"\n";
+    ADD_FAILURE()<<e.what()<<"\n"<<detail;
+  }
   int rotation_entries=0;
   for(const auto& line:io.reports) if(line.find("STEP5: 카메라")==0) ++rotation_entries;
   EXPECT_GE(rotation_entries,2);
@@ -175,6 +224,51 @@ TEST(VisionController, ConsecutiveProbesUseActualDisplacementAndRetainFreshTarge
   for(const auto& side:controller.counts()) for(const auto& kind:side) EXPECT_EQ(kind.learning,3);
   EXPECT_DOUBLE_EQ(controller.targets()[0].x(),initial.pipes[0].endpoint.x());
   EXPECT_DOUBLE_EQ(controller.targets()[0].y(),.006);
+}
+TEST(VisionController, MovingIterationsDoNotCollectDuplicateMeasurementWindows) {
+  Scene io;auto s=settings();s.deadline=600;
+  aa::VisionAlign controller(s,io);ASSERT_NO_THROW(controller.run());
+  // One initialization + one window per move + independent final hold samples.
+  EXPECT_EQ(io.measurements,io.commands+s.success_samples);
+}
+TEST(VisionController, PipeAxisRollNeedNotProduceAVisibleProbeResponse) {
+  Scene io;auto s=settings();s.deadline=600;
+  io.bases[0]=Eigen::AngleAxisd(.13,Eigen::Vector3d::UnitZ()).toRotationMatrix();
+  io.bases[1]=Eigen::AngleAxisd(-.07,Eigen::Vector3d::UnitY()).toRotationMatrix();
+  aa::VisionAlign controller(s,io);ASSERT_NO_THROW(controller.run());
+  EXPECT_NEAR(io.axis_changes.front(),0,1e-12);
+  EXPECT_EQ(controller.counts()[0][1].learning,3);EXPECT_EQ(controller.counts()[1][1].learning,3);
+}
+TEST(VisionController, WeakTaskDirectionGetsOnlyOneLargerProbe) {
+  Scene io;auto s=settings();s.deadline=600;s.validation_angle_floor=.0035;
+  io.bases[0]=Eigen::Matrix3d::Identity();io.rotation_response_scale[0].y()=.2;
+  aa::VisionAlign controller(s,io);ASSERT_NO_THROW(controller.run());
+  EXPECT_EQ(controller.counts()[0][1].learning,4);EXPECT_EQ(controller.counts()[1][1].learning,3);
+  EXPECT_NEAR(io.requests[3].norm(),s.retry_rotation,1e-10);
+}
+TEST(VisionController, PersistentWeakLearningStopsAfterFourProbes) {
+  Scene io;auto s=settings();s.deadline=600;io.angle_error=.02;
+  aa::VisionAlign controller(s,io);EXPECT_THROW(controller.run(),std::runtime_error);
+  EXPECT_EQ(io.commands,4);EXPECT_EQ(controller.counts()[0][1].learning,4);
+  EXPECT_EQ(controller.counts()[1][1].learning,0);
+}
+TEST(VisionController, BothArmsCanUseTheirSingleRetryWithinEightRotationProbes) {
+  Scene io;auto s=settings();s.deadline=600;s.validation_angle_floor=.0035;
+  for(size_t side=0;side<2;++side) {io.bases[side]=Eigen::Matrix3d::Identity();io.rotation_response_scale[side].y()=.2;}
+  io.state.pipes[1].axis=-(Eigen::AngleAxisd(.13,Eigen::Vector3d::UnitZ())*Eigen::Vector3d::UnitX());
+  io.offsets[1]=.12*io.state.pipes[1].axis;
+  aa::VisionAlign controller(s,io);ASSERT_NO_THROW(controller.run());
+  EXPECT_EQ(controller.counts()[0][1].learning,4);EXPECT_EQ(controller.counts()[1][1].learning,4);
+}
+TEST(VisionController, ChangedNewMappingCannotRestartUnlimitedLearning) {
+  Scene io;auto s=settings();s.deadline=600;io.change_after=4;
+  aa::VisionAlign controller(s,io);
+  try {controller.run();}catch(const std::runtime_error&) {}
+  EXPECT_EQ(controller.counts()[0][1].learning,4);
+  for(const auto& side:controller.counts()) EXPECT_LE(side[1].learning,4);
+  EXPECT_TRUE(std::any_of(io.reports.begin(),io.reports.end(),[](const std::string& m) {
+    return m.find("UVS_RESPONSE: left rotation source=learned result=mismatch")!=std::string::npos;
+  }));
 }
 TEST(VisionCache, NewProcessReusesMappingsWhileTargetsComeFromNewMeasurements) {
   CacheFile file;auto s=settings();s.deadline=600;const int cold_moves=cold_save(s,file.path);
@@ -201,6 +295,32 @@ TEST(VisionCache, WrongResponseRelearnsOnlyAffectedArmAndKind) {
   EXPECT_EQ(controller.counts()[0][1].learning,0);EXPECT_EQ(controller.counts()[1][0].learning,0);
   EXPECT_EQ(controller.counts()[1][1].learning,0);
 }
+TEST(VisionCache, TemporaryLowSignalFreezesUpdatesWithoutImmediateRelearning) {
+  CacheFile file;auto s=settings();s.deadline=600;cold_save(s,file.path);
+  Scene io;io.uncertain_until=2;
+  aa::VisionCache cache(file.path,"test-geometry",s);cache.load();
+  aa::VisionAlign controller(s,io,&cache);ASSERT_NO_THROW(controller.run());
+  EXPECT_GT(controller.counts()[0][1].rejected,0);
+  EXPECT_EQ(controller.counts()[0][1].learning,0);EXPECT_EQ(controller.counts()[1][1].learning,0);
+  EXPECT_TRUE(std::any_of(io.reports.begin(),io.reports.end(),[](const std::string& m) {
+    return m.find("신호 부족으로 온라인 행렬 갱신 보류")!=std::string::npos;
+  }));
+}
+TEST(VisionCache, UnvalidatedCandidateIsNotRefreshedWhenGoalHappensToBeReached) {
+  CacheFile file;auto s=settings();s.deadline=600;cold_save(s,file.path);
+  aa::VisionCache cache(file.path,"test-geometry",s);cache.load();
+  const double saved_at=cache.entries()[0][1]->saved_at;
+  Scene io;io.state=sample(1);io.angle_error=.006;
+  for(size_t side=0;side<2;++side) {
+    io.state.pipes[side].endpoint=cache.entries()[side][1]->reference.endpoint;
+    io.state.pipes[side].endpoint.y()=.006;io.state.pipes[side].endpoint.z()=.495;
+  }
+  io.state.pipes[0].axis=Eigen::AngleAxisd(.04,Eigen::Vector3d::UnitZ())*Eigen::Vector3d::UnitX();
+  for(size_t side=0;side<2;++side) io.offsets[side]=.12*io.state.pipes[side].axis;
+  aa::VisionAlign controller(s,io,&cache);ASSERT_NO_THROW(controller.run());
+  EXPECT_EQ(controller.counts()[0][1].reused,0);EXPECT_GT(controller.counts()[0][1].rejected,0);
+  EXPECT_DOUBLE_EQ(cache.entries()[0][1]->saved_at,saved_at);
+}
 TEST(VisionCache, LaterResponseIsStillCheckedAfterFirstDirectionWasAccepted) {
   CacheFile file;auto s=settings();s.deadline=600;cold_save(s,file.path);
   Scene io;io.change_after=3;
@@ -222,10 +342,10 @@ TEST(VisionCache, SmallUnobservableResponseDoesNotValidateSavedMapping) {
   CacheFile file;auto s=settings();s.deadline=600;cold_save(s,file.path);
   Scene io;io.position_error=.002;io.angle_error=.02;
   aa::VisionCache cache(file.path,"test-geometry",s);cache.load();
-  aa::VisionAlign controller(s,io,&cache);ASSERT_NO_THROW(controller.run());
-  for(const auto& side:controller.counts()) for(const auto& kind:side) {
-    EXPECT_EQ(kind.rejected,1);EXPECT_EQ(kind.learning,3);EXPECT_EQ(kind.reused,0);
-  }
+  aa::VisionAlign controller(s,io,&cache);EXPECT_THROW(controller.run(),std::runtime_error);
+  EXPECT_EQ(controller.counts()[0][1].learning,4);
+  EXPECT_EQ(controller.counts()[0][1].reused,0);
+  for(const auto& side:controller.counts()) EXPECT_LE(side[1].learning,4);
 }
 TEST(VisionCache, FailurePreservesLastGoodFileAndSafetyStopsBeforeRelearning) {
   CacheFile file;auto s=settings();s.deadline=600;cold_save(s,file.path);

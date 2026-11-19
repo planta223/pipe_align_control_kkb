@@ -56,9 +56,9 @@ vision_align:
   right_topic: /vision/right_pipe/pose
   frame_id: camera_left_optical_frame
   pipe_length_m: 0.316
-  # CAD 원본 Z=0 / 316 mm 중 실제 마주보는 플랜지. step4 표시로 확인한다.
-  left_endpoint_z_m: 0.316
-  right_endpoint_z_m: 0.316
+  # 20261119_170348.jpg의 빨간 원 두 면: 현재 추적 자세에서 CAD 원본 Z=0.
+  left_endpoint_z_m: 0.0
+  right_endpoint_z_m: 0.0
   max_pose_age_s: 1.0
   pair_timeout_s: 1.5
   sample_window_s: 0.8
@@ -74,10 +74,16 @@ vision_align:
   max_position_noise_m: 0.0025
   max_angle_noise_rad: 0.01745329252
   probe_translation_m: 0.003
-  probe_rotation_rad: 0.02617993878
+  probe_rotation_rad: 0.03490658504
+  # 기본 회전 시험은 팔당 3회. 정보 부족·응답 불일치 시 팔당 1회만 추가한다.
+  retry_rotation_rad: 0.05235987756
+  minimum_response_snr: 3.0
+  max_untrusted_responses: 3
   max_translation_step_m: 0.002
   max_rotation_step_rad: 0.01745329252
   linear_speed_m_s: 0.005
+  # TCP 회전 경로 계산에 적용하는 선속도다. STEP6 병진 속도와 분리한다.
+  rotation_linear_speed_m_s: 0.01
   angular_speed_rad_s: 0.05
   gain: 0.5
   damping: 0.05

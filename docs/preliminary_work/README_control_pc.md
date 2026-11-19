@@ -233,7 +233,10 @@ ros2 run simulation_validation live_control --arm both --step pre_align_ready --
 준비 자세까지 이동한 뒤 비전 PC의 FoundationPose를 실행하고, 터미널 8에서 좌우 pose 수신을 확인한다.
 이미 준비 자세이면 `pre_align_ready`를 반복 실행하지 않는다. 손의 grasp를 유지하며 teleop·init·다른 팔 제어기는 종료한다.
 신규 학습은 회전·병진 각각 팔당 3회, 양팔 6회이며 복귀 이동을 생략한다. 둘 다 새로 학습하면 총 12회다.
+기본 회전 시험은 2°다. 정보 부족·응답 불일치·정체 시 해당 팔에만 3° 시험을 1회 추가할 수 있어
+회전 시험은 실행 전체에서 최대 8회, 병진 학습까지 합하면 최대 14회다. 한도 안에서 품질을 확보하지 못하면 중지한다.
 보정 이동은 별도이며, 유효한 저장값이 있으면 실제 보정 응답을 검증하면서 재사용한다.
+현재 양쪽 끝단 설정은 `0.0 m`이며, [확인 사진](../vision_pc/20261119_170348.jpg)의 빨간 원 두 면에 해당한다.
 
 ### 측정 전용 — 로봇 이동 없음
 
@@ -294,4 +297,7 @@ ros2 run simulation_validation live_control --arm both --step vision_align --rel
 검증 실패 시 해당 팔·단계만 재학습하며, 추적·충돌·이동 범위 이상은 중지한다.
 step7 성공 후에만 저장하므로 실패·중단한 실행으로 기존 정상값을 덮어쓰지 않는다.
 `CACHE_VALIDATE:`와 `VISION_MOVES:`로 재사용·학습 횟수를 확인한다. 검증은 보정 이동에 포함되므로 중복 합산하지 않는다.
+`UVS_LEARN_QUALITY:`와 `UVS_RESPONSE:`로 신규 학습·보정의 반응 품질을 확인한다.
+`PERF: VISION_MOVE`는 경로·이동 시간과 실제 SDK 변위, `PERF: VISION_MEASURE`는 대기·평균 시간과
+실패한 창을 포함한 양팔 위치·각도 RMS를 기록한다. 실행 설정은 `VISION_CONFIG:`에 남는다.
 자세한 판정 기준은 [auto_align 안내](../../main/control_pc/src/auto_align/README.md#학습값-저장검증재사용)를 따른다.

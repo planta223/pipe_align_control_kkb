@@ -24,8 +24,11 @@ struct VisionSettings {
   std::string cache_context = "default";
   double cache_max_age = 86400, cache_position_radius = .03, cache_rotation_radius = .15;
   double validation_position_floor = .00005, validation_angle_floor = .0005;
+  double retry_rotation = .05235987756, rotation_linear_speed = .01, minimum_response_snr = 3;
+  int max_untrusted_responses = 3;
 };
 VisionSettings vision_settings(const YAML::Node& control);
+xm::Limits vision_motion_limits(xm::Limits limits, const VisionSettings& settings, bool rotation);
 void require_vision_enabled(const YAML::Node& control);
 struct PipeObservation { Eigen::Vector3d endpoint, axis; };
 struct VisionPair {
@@ -35,6 +38,7 @@ struct VisionPair {
   // Uncertainty of each settled mean, including within-window drift. Meters and
   // radians stay separate; correlated tracking samples are not assumed iid.
   std::array<double,2> position_error{}, angle_error{};
+  std::array<double,2> position_rms{}, angle_rms{};
 };
 struct VisionCacheEntry {
   VisualJacobian jacobian;
@@ -86,6 +90,12 @@ public:
 struct VisionMoveCounts {
   int learning = 0, correction = 0, validation = 0, reused = 0, rejected = 0;
 };
+struct ProbeResponse {
+  Eigen::Vector3d actual;
+  Features change;
+  double position_noise, angle_noise;
+};
+enum class ResponseStatus { Accepted, LowSignal, Mismatch };
 class VisionAlign {
 public:
   VisionAlign(VisionSettings settings, VisionIO& io, VisionCache* cache = nullptr);
@@ -101,14 +111,18 @@ private:
   VisionPair move(size_t side, const Eigen::Vector3d& delta, bool rotation,
                   Eigen::Vector3d* actual = nullptr);
   void learn(size_t side, bool rotation);
+  void probe(size_t side, bool rotation, const Eigen::Vector3d& request, const std::string& label);
+  bool fit_probes(size_t side, bool rotation);
+  void retry_rotation(size_t side);
+  void refresh(size_t side, bool rotation);
   void rotation_stage();
   bool translation_stage();
   bool angles_ok(const VisionPair& pair) const;
   bool positions_ok(const VisionPair& pair) const;
   void correct(size_t side, bool rotation);
   bool reuse(size_t side, bool rotation);
-  bool response_ok(size_t side, bool rotation, const VisionPair& before,
-                   const Features& predicted, const Features& observed) const;
+  ResponseStatus response_status(size_t side, bool rotation, const VisionPair& before,
+                                 const Features& predicted, const Features& observed) const;
   void save_verified();
   VisionSettings settings_;
   VisionIO& io_;
@@ -120,6 +134,8 @@ private:
   std::array<std::array<int,2>,2> worsening_{};
   std::array<std::array<bool,2>,2> cached_{};
   std::array<std::array<VisionMoveCounts,2>,2> counts_{};
+  std::array<std::array<std::vector<ProbeResponse>,2>,2> probes_;
+  std::array<std::array<int,2>,2> untrusted_{}, stagnant_{};
   VisionCache* cache_;
   int moves_ = 0;
   int64_t last_stamp_ = 0;

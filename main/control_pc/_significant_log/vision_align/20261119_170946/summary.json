@@ -1,0 +1,369 @@
+{
+  "source": "auto_align_3740988_1795075786087.log",
+  "sha256": "c461596702cfa4e84280be3f169334a443e8341fb5b1ef240a9825367871c013",
+  "start_kst": "2026-11-19T17:09:46.679954+09:00",
+  "duration_s": 83.316971976,
+  "end": "FAULT: 정지 상태의 비전 변동이 허용 범위를 넘었습니다.",
+  "control_reference_line": 6,
+  "reference_control_sha256": "ff426094f268193a0e61840ef4f7d2685f1befe3127d6401b2e353f30e7eb647",
+  "thresholds_are_current_config_reference": true,
+  "samples": 30,
+  "probes": 6,
+  "completed_corrections": 13,
+  "path_checks": 20,
+  "unmeasured_last_cycle": true,
+  "initial_collision_s": 2.151693,
+  "connection_collision_s": 0.297643,
+  "phases": [
+    {
+      "start_s": 0.0,
+      "phase": "STEP4",
+      "end_s": 1.6794428520000002
+    },
+    {
+      "start_s": 1.6794428520000002,
+      "phase": "READY",
+      "end_s": 1.6795346800000002
+    },
+    {
+      "start_s": 1.6795346800000002,
+      "phase": "STEP4",
+      "end_s": 2.841616031
+    },
+    {
+      "start_s": 2.841616031,
+      "phase": "STEP5",
+      "end_s": 83.316971976
+    }
+  ],
+  "events": [
+    {
+      "source_line": 1,
+      "elapsed_s": 0.0,
+      "message": "RUNNING: STEP4: 좌우 비전 수신·끝단 표시 / 로봇 이동 없음"
+    },
+    {
+      "source_line": 4,
+      "elapsed_s": 1.6794428520000002,
+      "message": "READY: vision_align step4~7 / 자동 시작 / 작은 시험 이동이 시작됩니다."
+    },
+    {
+      "source_line": 5,
+      "elapsed_s": 1.6795346800000002,
+      "message": "RUNNING: STEP4: 좌우 끝단 측정·고정 목표 설정"
+    },
+    {
+      "source_line": 7,
+      "elapsed_s": 2.841616031,
+      "message": "RUNNING: STEP5: 카메라 X축 평행 회전 보정·검증"
+    },
+    {
+      "source_line": 8,
+      "elapsed_s": 2.8416445940000004,
+      "message": "RUNNING: STEP5: left UVS 시험 이동·대응 관계 추정"
+    },
+    {
+      "source_line": 26,
+      "elapsed_s": 18.776962898,
+      "message": "RUNNING: STEP5: left error 0.156355 -> 0.122819 rad / moves=4"
+    },
+    {
+      "source_line": 27,
+      "elapsed_s": 18.77697068,
+      "message": "RUNNING: STEP5: right UVS 시험 이동·대응 관계 추정"
+    },
+    {
+      "source_line": 45,
+      "elapsed_s": 34.714912557000005,
+      "message": "RUNNING: STEP5: right error 0.0402364 -> 0.0267296 rad / moves=8"
+    },
+    {
+      "source_line": 52,
+      "elapsed_s": 38.91455735,
+      "message": "RUNNING: STEP5: left error 0.128318 -> 0.120905 rad / moves=9"
+    },
+    {
+      "source_line": 58,
+      "elapsed_s": 41.782541496,
+      "message": "RUNNING: STEP5: right error 0.0268883 -> 0.0115338 rad / moves=10"
+    },
+    {
+      "source_line": 65,
+      "elapsed_s": 46.11196541,
+      "message": "RUNNING: STEP5: left error 0.122408 -> 0.115212 rad / moves=11"
+    },
+    {
+      "source_line": 72,
+      "elapsed_s": 50.578753464,
+      "message": "RUNNING: STEP5: left error 0.116035 -> 0.115552 rad / moves=12"
+    },
+    {
+      "source_line": 79,
+      "elapsed_s": 55.048733314,
+      "message": "RUNNING: STEP5: left error 0.113976 -> 0.103606 rad / moves=13"
+    },
+    {
+      "source_line": 86,
+      "elapsed_s": 59.515251943,
+      "message": "RUNNING: STEP5: left error 0.100182 -> 0.0988949 rad / moves=14"
+    },
+    {
+      "source_line": 92,
+      "elapsed_s": 62.37869641100001,
+      "message": "RUNNING: STEP5: right error 0.0239941 -> 0.0123768 rad / moves=15"
+    },
+    {
+      "source_line": 99,
+      "elapsed_s": 66.916541826,
+      "message": "RUNNING: STEP5: left error 0.0989496 -> 0.0962835 rad / moves=16"
+    },
+    {
+      "source_line": 102,
+      "elapsed_s": 69.71232745600001,
+      "message": "RUNNING: STEP5: right error 0.0153901 -> 0.00338515 rad / moves=17"
+    },
+    {
+      "source_line": 109,
+      "elapsed_s": 74.249679373,
+      "message": "RUNNING: STEP5: left error 0.0926366 -> 0.0766933 rad / moves=18"
+    },
+    {
+      "source_line": 116,
+      "elapsed_s": 78.78016088300001,
+      "message": "RUNNING: STEP5: left error 0.0724132 -> 0.0732324 rad / moves=19"
+    },
+    {
+      "source_line": 122,
+      "elapsed_s": 83.316971976,
+      "message": "FAULT: 정지 상태의 비전 변동이 허용 범위를 넘었습니다."
+    }
+  ],
+  "cycles": [
+    {
+      "start_s": 2.8416608830000003,
+      "end_s": 7.442200103,
+      "source_line": 10,
+      "kind": "probe",
+      "initial_collision_s": 0.164133,
+      "connection_collision_s": 0.0,
+      "measurement_recorded": true,
+      "duration_s": 4.60053922,
+      "other_s": 4.43640622
+    },
+    {
+      "start_s": 7.442244667000001,
+      "end_s": 10.774677464,
+      "source_line": 13,
+      "kind": "probe",
+      "initial_collision_s": 0.107192,
+      "connection_collision_s": 0.0,
+      "measurement_recorded": true,
+      "duration_s": 3.332432796999999,
+      "other_s": 3.225240796999999
+    },
+    {
+      "start_s": 10.774710607000001,
+      "end_s": 15.380512320000001,
+      "source_line": 16,
+      "kind": "probe",
+      "initial_collision_s": 0.161691,
+      "connection_collision_s": 0.02042,
+      "measurement_recorded": true,
+      "duration_s": 4.605801713,
+      "other_s": 4.423690713
+    },
+    {
+      "start_s": 15.380512320000001,
+      "end_s": 18.776916502000002,
+      "source_line": 21,
+      "kind": "correction",
+      "initial_collision_s": 0.100064,
+      "connection_collision_s": 0.020363,
+      "measurement_recorded": true,
+      "duration_s": 3.3964041820000013,
+      "other_s": 3.275977182000001
+    },
+    {
+      "start_s": 18.776976266000002,
+      "end_s": 23.114931575,
+      "source_line": 29,
+      "kind": "probe",
+      "initial_collision_s": 0.156252,
+      "connection_collision_s": 0.021572,
+      "measurement_recorded": true,
+      "duration_s": 4.337955308999998,
+      "other_s": 4.160131308999998
+    },
+    {
+      "start_s": 23.114964783,
+      "end_s": 27.185372285000003,
+      "source_line": 35,
+      "kind": "probe",
+      "initial_collision_s": 0.138494,
+      "connection_collision_s": 0.020451,
+      "measurement_recorded": true,
+      "duration_s": 4.070407502000002,
+      "other_s": 3.911462502000002
+    },
+    {
+      "start_s": 27.185428214,
+      "end_s": 31.649505876000003,
+      "source_line": 41,
+      "kind": "probe",
+      "initial_collision_s": 0.163175,
+      "connection_collision_s": 0.0,
+      "measurement_recorded": true,
+      "duration_s": 4.464077662000001,
+      "other_s": 4.300902662000001
+    },
+    {
+      "start_s": 31.649505876000003,
+      "end_s": 34.714869458,
+      "source_line": 43,
+      "kind": "correction",
+      "initial_collision_s": 0.089166,
+      "connection_collision_s": 0.0,
+      "measurement_recorded": true,
+      "duration_s": 3.065363582,
+      "other_s": 2.9761975819999997
+    },
+    {
+      "start_s": 35.586184895,
+      "end_s": 38.914495987,
+      "source_line": 47,
+      "kind": "correction",
+      "initial_collision_s": 0.09436,
+      "connection_collision_s": 0.021462,
+      "measurement_recorded": true,
+      "duration_s": 3.328311092,
+      "other_s": 3.2124890919999998
+    },
+    {
+      "start_s": 38.914495987,
+      "end_s": 41.782477898,
+      "source_line": 53,
+      "kind": "correction",
+      "initial_collision_s": 0.072932,
+      "connection_collision_s": 0.020363,
+      "measurement_recorded": true,
+      "duration_s": 2.867981911000001,
+      "other_s": 2.774686911000001
+    },
+    {
+      "start_s": 42.712810848000004,
+      "end_s": 46.111914117000005,
+      "source_line": 60,
+      "kind": "correction",
+      "initial_collision_s": 0.101154,
+      "connection_collision_s": 0.020719,
+      "measurement_recorded": true,
+      "duration_s": 3.399103269000001,
+      "other_s": 3.277230269000001
+    },
+    {
+      "start_s": 47.048502085,
+      "end_s": 50.578680949,
+      "source_line": 67,
+      "kind": "correction",
+      "initial_collision_s": 0.095749,
+      "connection_collision_s": 0.020917,
+      "measurement_recorded": true,
+      "duration_s": 3.530178864,
+      "other_s": 3.413512864
+    },
+    {
+      "start_s": 51.44943373500001,
+      "end_s": 55.048689332,
+      "source_line": 74,
+      "kind": "correction",
+      "initial_collision_s": 0.097576,
+      "connection_collision_s": 0.018102,
+      "measurement_recorded": true,
+      "duration_s": 3.5992555969999955,
+      "other_s": 3.4835775969999956
+    },
+    {
+      "start_s": 55.918218335000006,
+      "end_s": 59.515198332000004,
+      "source_line": 81,
+      "kind": "correction",
+      "initial_collision_s": 0.09617,
+      "connection_collision_s": 0.018955,
+      "measurement_recorded": true,
+      "duration_s": 3.5969799969999983,
+      "other_s": 3.4818549969999983
+    },
+    {
+      "start_s": 59.515198332000004,
+      "end_s": 62.378633605000005,
+      "source_line": 87,
+      "kind": "correction",
+      "initial_collision_s": 0.069214,
+      "connection_collision_s": 0.019566,
+      "measurement_recorded": true,
+      "duration_s": 2.8634352730000003,
+      "other_s": 2.774655273
+    },
+    {
+      "start_s": 63.248175848,
+      "end_s": 66.916478004,
+      "source_line": 94,
+      "kind": "correction",
+      "initial_collision_s": 0.095711,
+      "connection_collision_s": 0.019005,
+      "measurement_recorded": true,
+      "duration_s": 3.6683021559999958,
+      "other_s": 3.5535861559999957
+    },
+    {
+      "start_s": 66.916478004,
+      "end_s": 69.712252078,
+      "source_line": 100,
+      "kind": "correction",
+      "initial_collision_s": 0.063111,
+      "connection_collision_s": 0.0,
+      "measurement_recorded": true,
+      "duration_s": 2.7957740740000077,
+      "other_s": 2.7326630740000075
+    },
+    {
+      "start_s": 70.581775324,
+      "end_s": 74.24961480500001,
+      "source_line": 104,
+      "kind": "correction",
+      "initial_collision_s": 0.0941,
+      "connection_collision_s": 0.018911,
+      "measurement_recorded": true,
+      "duration_s": 3.6678394810000015,
+      "other_s": 3.5548284810000013
+    },
+    {
+      "start_s": 75.118271394,
+      "end_s": 78.780118347,
+      "source_line": 111,
+      "kind": "correction",
+      "initial_collision_s": 0.095667,
+      "connection_collision_s": 0.018434,
+      "measurement_recorded": true,
+      "duration_s": 3.661846952999994,
+      "other_s": 3.547745952999994
+    },
+    {
+      "start_s": 79.715858174,
+      "end_s": 83.316971976,
+      "source_line": 118,
+      "kind": "correction",
+      "initial_collision_s": 0.095782,
+      "connection_collision_s": 0.018403,
+      "measurement_recorded": false,
+      "duration_s": 3.6011138020000004,
+      "other_s": 3.4869288020000004
+    }
+  ],
+  "limitations": [
+    "Failure window RMS and responsible side unlogged.",
+    "Physical motion/settle/measurement times not separately logged.",
+    "Snapshots are stopped averaged observations, not raw camera frames.",
+    "Individual XYZ errors use fresh control-start targets; no cached targets."
+  ]
+}

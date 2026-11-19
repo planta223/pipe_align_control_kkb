@@ -17,14 +17,15 @@ void VisionAlign::save_verified() {
   auto entries=cache_->entries();
   bool updated=false;
   const double now=std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
-  for(size_t side=0;side<2;++side) for(size_t kind=0;kind<2;++kind) if(learned_[side][kind]) {
-    const auto tcp=io_.tcp_pose(side);
-    if(tcp) {
-      entries[side][kind]=VisionCacheEntry{jacobians_[side][kind],current_.pipes[side],*tcp,now,
-        current_.position_error[side],current_.angle_error[side]};
-      updated=true;
+  for(size_t side=0;side<2;++side) for(size_t kind=0;kind<2;++kind)
+    if(learned_[side][kind] && (!cached_[side][kind] || counts_[side][kind].reused>0)) {
+      const auto tcp=io_.tcp_pose(side);
+      if(tcp) {
+        entries[side][kind]=VisionCacheEntry{jacobians_[side][kind],current_.pipes[side],*tcp,now,
+          current_.position_error[side],current_.angle_error[side]};
+        updated=true;
+      }
     }
-  }
   if(!updated) return;
   // Only persistence errors are nonfatal. SDK reads and safety/vision faults above
   // must still stop the run; interrupted runs never reach this commit point.
