@@ -29,7 +29,7 @@ limits:
   position_tracking_error_m: 0.005
   orientation_tracking_error_rad: 0.1
   # 외부 JointRamp의 계수·주기 상한·추종 오차다.
-  joint_speed_coefficient_rad_s: 0.2
+  joint_speed_coefficient_rad_s: 0.3
   joint_step_dt_cap_s: 0.004
   joint_tracking_error_rad: 0.05
   # init.cc의 25 deg/s²를 새 경로의 가속도 제한에 적용한다.
