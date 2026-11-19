@@ -4,7 +4,7 @@ frame_id: world
 floor_z_m: -1.06801
 
 table:
-  enabled: true
+  enabled: false
   # 앞뒤 깊이·좌우 폭·두께 순서다.
   size_m: [0.76, 1.52, 0.04]
   # 가까운 모서리 윗면 중앙의 world 위치·회전이다.
@@ -13,7 +13,7 @@ table:
   rgba: [0.65, 0.48, 0.30, 1.0]
 
 blind:
-  enabled: true
+  enabled: false
   width_m: 1.52
   height_m: 2.0
   # 표시용 두께다. 실제 천막 두께를 뜻하지 않는다.
@@ -26,7 +26,7 @@ blind:
   rgba: [0.55, 0.60, 0.65, 0.30]
 
 right_wall:
-  enabled: true
+  enabled: false
   # 책상 앞뒤 끝에 맞춘 벽의 길이다.
   length_m: 0.76
   height_m: 2.0
