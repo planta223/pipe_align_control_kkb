@@ -172,7 +172,9 @@ ros2 topic echo /vision/right_pipe/pose --qos-reliability best_effort
 별도 `tracking_status` 토픽은 없다. 실제 손과 left/right Pipe 대응도 비전 PC의 초기 mask와 `--left-pipe-object-id` 설정으로 확인한다.
 이 단계는 PC 간 수신 확인이며, 자율 정렬 제어 연결은 포함하지 않는다.
 
-## 9. 실제 양팔 자세 시각화 — 선택 실행
+## 9. 터미널 9 — 실제 양팔 자세 시각화 / 준비 이동
+
+### 실제 양팔 자세 시각화 — 선택 실행
 
 공식 모델과 `simulation_validation`을 [패키지 안내](../../main/control_pc/src/simulation_validation/README.md#빌드)에 따라 빌드한 뒤 새 터미널에서 실행한다.
 기존 정적 시각화가 실행 중이면 해당 창만 Ctrl+C로 종료한다.
@@ -194,3 +196,21 @@ ros2 launch simulation_validation init1.launch.py mode:=live_feedback
 
 정적·동적 시각화와 자세 선택 명령은 [시각화 안내](../control_pc/README_simulation.md)를 따른다.
 저장 자세 사이의 실물 이동을 시각화와 함께 실행하려면 같은 문서의 `live_control` 항목을 따른다. `live_feedback`과 동시에 실행하지 않는다.
+
+### RViz 없이 pre-align 제어만 실행
+
+손의 grasp 상태를 유지한 채 teleop·init·다른 팔 제어기를 종료하고 실행한다.
+`main/control_pc/config/control.yaml`의 `execution.auto_align_enabled`가 `true`여야 한다.
+
+```bash
+cd ~/pipe_align_control_kkb
+source /opt/ros/humble/setup.bash
+source ~/project/xarm_sdk/install/setup.bash
+source main/control_pc/_colcon/install/local_setup.bash
+export ROS_DOMAIN_ID=8
+export ROS_LOCALHOST_ONLY=0
+ros2 run auto_align auto_align --step pre_align_ready
+```
+
+`READY`에서 목표 자세와 예상 시간을 확인한 뒤 Enter로 양팔 준비 이동을 실행한다.
+RViz는 시작하지 않으며, 완료하면 제어기가 종료된다. Ctrl+C로 중지할 수 있다.
