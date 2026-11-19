@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
 project(auto_align)
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
+endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_options(-Wall -Wextra -Wpedantic)
@@ -18,9 +21,11 @@ find_package(kdl_parser REQUIRED)
 find_package(orocos_kdl REQUIRED)
 find_package(fcl REQUIRED)
 find_package(assimp REQUIRED)
+find_package(Threads REQUIRED)
 
 add_library(auto_align_core SHARED
   src/collision_checker.cpp
+  src/vision_cache.cpp
   src/steps/step_01_vertical_move.cpp
   src/steps/step_02_horizontal_move.cpp
   src/steps/step_03_orientation_align.cpp
@@ -29,7 +34,7 @@ add_library(auto_align_core SHARED
   src/steps/step_06_translation_align.cpp
   src/steps/step_07_vision_verify.cpp)
 target_include_directories(auto_align_core PUBLIC include)
-target_link_libraries(auto_align_core PUBLIC xarm_motion::motion_core Eigen3::Eigen yaml-cpp fcl assimp::assimp)
+target_link_libraries(auto_align_core PUBLIC xarm_motion::motion_core Eigen3::Eigen yaml-cpp fcl assimp::assimp Threads::Threads)
 ament_target_dependencies(auto_align_core PUBLIC ament_index_cpp urdf kdl_parser orocos_kdl)
 
 add_executable(auto_align_node src/auto_align_node.cpp src/vision_align_node.cpp)

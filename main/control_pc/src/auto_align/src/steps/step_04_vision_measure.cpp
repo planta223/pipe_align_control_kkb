@@ -36,8 +36,21 @@ VisionSettings vision_settings(const YAML::Node& control) {
   s.min_samples=n["minimum_samples"].as<int>(); s.max_iterations=n["max_stage_iterations"].as<int>();
   s.success_samples=n["minimum_success_samples"].as<int>();
   s.max_moves=n["max_moves"].as<int>(); s.max_worsening=n["max_worsening"].as<int>();
+  const auto cache=n["cache"];
+  if(cache) {
+    s.cache_enabled=cache["enabled"].as<bool>();
+    s.cache_context=cache["context_id"].as<std::string>();
+    s.cache_max_age=positive(cache,"max_age_s");
+    s.cache_position_radius=positive(cache,"position_radius_m");
+    s.cache_rotation_radius=positive(cache,"rotation_radius_rad");
+    s.validation_position_floor=positive(cache,"position_noise_floor_m");
+    s.validation_angle_floor=positive(cache,"angle_noise_floor_rad");
+    require(!s.cache_context.empty() && s.cache_position_radius<=s.max_travel &&
+      s.cache_rotation_radius<=s.max_turn && s.validation_position_floor<s.probe_translation &&
+      s.validation_angle_floor<s.probe_rotation,"저장값 검증의 범위·노이즈 설정이 유효하지 않습니다.");
+  }
   require(s.min_samples>=3 && s.min_samples<=100 && s.success_samples>=3 && s.success_samples<=100 &&
-    s.max_iterations>0 && s.max_moves>=24 && s.max_worsening>0,"측정 수·반복 상한이 유효하지 않습니다.");
+    s.max_iterations>0 && s.max_moves>=12 && s.max_worsening>0,"측정 수·반복 상한이 유효하지 않습니다.");
   require(s.gain<=1 && s.sample_timeout>s.sample_window && s.pair_timeout>=.7 && s.max_age>=.5 &&
     s.probe_translation<=.005 && s.probe_rotation<=.035 && s.max_translation<=.005 && s.max_rotation<=.035 &&
     s.angle_tolerance<.2 && s.max_turn<1.0 && s.max_position_noise<s.position_tolerance && s.max_angle_noise<s.angle_tolerance,
@@ -93,10 +106,15 @@ VisionPair average_pairs(const std::vector<VisionPair>& samples,const VisionSett
     require(std::sqrt(position_variance/samples.size())<=s.max_position_noise &&
       std::sqrt(angle_variance/samples.size())<=s.max_angle_noise,"정지 상태의 비전 변동이 허용 범위를 넘었습니다.");
     out.pipes[side]={p,a};
+    out.position_error[side]=std::max(std::sqrt(position_variance)/samples.size(),
+      .5*(samples.back().pipes[side].endpoint-samples.front().pipes[side].endpoint).norm());
+    out.angle_error[side]=std::max(std::sqrt(angle_variance)/samples.size(),.5*std::acos(std::clamp(
+      samples.back().pipes[side].axis.dot(samples.front().pipes[side].axis),-1.,1.)));
   }
   return out;
 }
-VisionAlign::VisionAlign(VisionSettings settings,VisionIO& io):settings_(std::move(settings)),io_(io) {}
+VisionAlign::VisionAlign(VisionSettings settings,VisionIO& io,VisionCache* cache)
+  :settings_(std::move(settings)),io_(io),cache_(cache) {}
 void VisionAlign::initialize() {
   io_.report("STEP4: 좌우 끝단 측정·고정 목표 설정");
   current_=initial_=io_.measure();

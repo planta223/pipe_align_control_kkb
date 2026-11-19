@@ -85,14 +85,27 @@ def test_measurement_process_accepts_variable_rate_without_robot(hz, monkeypatch
     assert child.returncode in (0, 130), output
 
 
-def test_full_control_refuses_unattended_start_before_any_sdk_connection():
+@pytest.mark.parametrize('step', ['pre_align_ready', 'vision_align'])
+@pytest.mark.parametrize('auto_start', [False, True])
+def test_full_control_refuses_unattended_start_before_any_sdk_connection(step, auto_start):
     # Even if a user enables the YAML gate later, stdin=DEVNULL prevents SDK
     # construction. This test must never depend on an accessible real robot.
-    child = subprocess.run([executable(), '--step', 'vision_align'],
+    child = subprocess.run([executable(), '--step', step, *(['--auto-start'] if auto_start else [])],
                            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                            stderr=subprocess.STDOUT, text=True, timeout=5)
     assert child.returncode != 0
-    assert 'vision_align_enabled' in child.stdout or '터미널' in child.stdout
+    assert 'enabled' in child.stdout or '터미널' in child.stdout
+    assert 'SDK_VERSION' not in child.stdout
+
+
+@pytest.mark.parametrize('step', ['vision_measure', 'pre_align_ready'])
+def test_relearn_rejected_for_other_steps_without_sdk(step):
+    child = subprocess.run([executable(), '--step', step, '--relearn'],
+                           stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                           stderr=subprocess.STDOUT, text=True, timeout=5)
+    assert child.returncode == 1
+    assert '--relearn' in child.stdout
+    assert 'SDK_VERSION' not in child.stdout
 
 
 def test_old_images_never_produce_a_measurement(monkeypatch):

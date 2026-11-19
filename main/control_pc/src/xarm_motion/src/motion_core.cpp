@@ -15,6 +15,11 @@
 
 namespace xarm_motion {
 namespace {
+struct AccumulateSeconds {
+  double& seconds;
+  double started = steady_seconds();
+  ~AccumulateSeconds() { seconds += steady_seconds()-started; }
+};
 void require(bool condition, const std::string& message) {
   if (!condition) throw std::runtime_error(message);
 }
@@ -149,7 +154,10 @@ void ArmKinematics::check(const Joints& joints) const {
 }
 Pose ArmKinematics::fk(const Joints& joints) const {
   check(joints);
-  KDL::ChainFkSolverPos_recursive solver(chain_);
+  // KDL::Joint::pose() mutates a cache even through const references. Solvers
+  // get a private chain so parallel readers of a nominal model cannot race.
+  KDL::Chain chain=chain_;
+  KDL::ChainFkSolverPos_recursive solver(chain);
   KDL::Frame frame;
   require(solver.JntToCart(kdl_joints(joints), frame) >= 0, "FK 계산 실패");
   Pose pose = Pose::Identity();
@@ -162,9 +170,10 @@ Pose ArmKinematics::fk(const Joints& joints) const {
 Joints ArmKinematics::solve(const Pose& target, const Joints& seed) const {
   validate_pose(target);
   check(seed);
-  KDL::ChainFkSolverPos_recursive fk_solver(chain_);
-  KDL::ChainIkSolverVel_pinv velocity_solver(chain_, 1e-8);
-  KDL::ChainIkSolverPos_NR_JL solver(chain_, kdl_joints(lower_), kdl_joints(upper_),
+  KDL::Chain chain=chain_;
+  KDL::ChainFkSolverPos_recursive fk_solver(chain);
+  KDL::ChainIkSolverVel_pinv velocity_solver(chain, 1e-8);
+  KDL::ChainIkSolverPos_NR_JL solver(chain, kdl_joints(lower_), kdl_joints(upper_),
     fk_solver, velocity_solver, 500, 1e-7);
   KDL::JntArray output(7);
   require(solver.CartToJnt(kdl_joints(seed), kdl_pose(target), output) >= 0, "로컬 IK 계산 실패");
@@ -178,12 +187,16 @@ SdkKinematics::SdkKinematics(ArmBackend& backend, const ArmKinematics& bounds, P
   : backend_(backend), bounds_(bounds), flange_T_tcp_(std::move(tcp)) {}
 void SdkKinematics::check(const Joints& joints) const { bounds_.check(joints); }
 Pose SdkKinematics::fk(const Joints& joints) const {
+  ++stats_.fk_calls;
+  AccumulateSeconds timer{stats_.fk_seconds};
   check(joints);
   const Pose flange = backend_.tcp_fk(joints)*flange_T_tcp_.inverse();
   validate_pose(flange);
   return flange;
 }
 Joints SdkKinematics::solve(const Pose& target, const Joints& seed) const {
+  ++stats_.solve_calls;
+  AccumulateSeconds timer{stats_.solve_seconds};
   validate_pose(target); check(seed);
   // 7축 SDK IK의 다른 해로 뛰지 않도록 SDK FK의 수치 Jacobian으로 seed 근처 해를 구한다.
   using Error = Eigen::Matrix<double,6,1>;
@@ -197,6 +210,7 @@ Joints SdkKinematics::solve(const Pose& target, const Joints& seed) const {
   Joints q = seed;
   Pose current = fk(q);
   for (int iteration = 0; iteration < 40; ++iteration) {
+    ++stats_.solve_iterations;
     if (pose_close(current,target,0.00002,0.0001)) return q;
     const Error error = difference(target,current);
     Eigen::Matrix<double,6,7> jacobian;
@@ -229,7 +243,12 @@ Joints SdkKinematics::solve(const Pose& target, const Joints& seed) const {
     if (!improved) break;
   }
   // 보정 실패 시 SDK IK를 확인하되 상위 경로의 연속성·FK 검사를 생략하지 않는다.
-  Joints result = backend_.tcp_ik(target*flange_T_tcp_);
+  Joints result;
+  {
+    ++stats_.fallback_ik_calls;
+    AccumulateSeconds fallback_timer{stats_.fallback_ik_seconds};
+    result = backend_.tcp_ik(target*flange_T_tcp_);
+  }
   check(result);
   for (int i = 0; i < 7; ++i) {
     for (double turn : {-2*std::acos(-1.0),2*std::acos(-1.0)}) {
@@ -271,12 +290,15 @@ MotionPlan::MotionPlan(const Kinematics& arm, const Joints& actual, const Pose& 
   duration_ = std::max(1.0, 1.5*std::max(
     (distance + tcp.translation().norm()*angle)/limits.linear_speed, angle/limits.angular_speed));
   double derivative = 0, acceleration = 0;
+  Joints joint_derivative = Joints::Zero();
   for (int i = 0; i < count; ++i) {
     const Joints a = 2*knots_[i]-2*knots_[i+1]+tangents_[i]+tangents_[i+1];
     const Joints b = -3*knots_[i]+3*knots_[i+1]-2*tangents_[i]-tangents_[i+1];
     for (int j = 0; j < 7; ++j) {
       for (double u : {0.0, 1.0, std::abs(a[j]) > 1e-15 ? std::clamp(-b[j]/(3*a[j]),0.0,1.0) : 0.0}) {
-        derivative = std::max(derivative, std::abs((3*a[j]*u*u+2*b[j]*u+tangents_[i][j])*count));
+        const double value = std::abs((3*a[j]*u*u+2*b[j]*u+tangents_[i][j])*count);
+        derivative = std::max(derivative,value);
+        joint_derivative[j] = std::max(joint_derivative[j],value);
       }
       acceleration = std::max(acceleration, std::max(std::abs(2*b[j]),
         std::abs(6*a[j]+2*b[j]))*count*count);
@@ -340,6 +362,7 @@ MotionPlan::MotionPlan(const Kinematics& arm, const Joints& actual, const Pose& 
   }
   require(valid, "경로 속도·가속도 검증에 실패했습니다.");
   joint_speed_bound_ = derivative / duration_;
+  joint_speed_bounds_ = 1.5*joint_derivative/duration_;
 }
 Joints MotionPlan::sample(double fraction) const {
   require(std::isfinite(fraction), "유효한 경로 시각이 필요합니다.");
@@ -424,6 +447,7 @@ public:
   }
   double duration() const override { return duration_; }
   double joint_speed_bound() const override { return 1.875*delta_.cwiseAbs().maxCoeff()/duration_; }
+  Joints joint_speed_bounds() const override { return 1.875*delta_.cwiseAbs()/duration_; }
 private:
   Joints start_,delta_;
   std::vector<Pose> cache_;
@@ -449,6 +473,10 @@ public:
   double joint_speed_bound() const override {
     return std::max(connection_->joint_speed_bound()*connection_->duration()/connection_time_,
       original_->joint_speed_bound()*original_->duration()/original_time_);
+  }
+  Joints joint_speed_bounds() const override {
+    return (connection_->joint_speed_bounds()*connection_->duration()/connection_time_).cwiseMax(
+      original_->joint_speed_bounds()*original_->duration()/original_time_);
   }
 private:
   std::unique_ptr<MotionTrajectory> original_;
@@ -627,7 +655,9 @@ void MotionSession::begin(double now) {
     start_connection_=connection_time;
     duration_=original_time+connection_time;
     prepare_timing();
-    if(start_validator_) start_validator_(arms_,path_duration_);
+    // ConnectedTrajectory preserves the already checked original suffix exactly.
+    // Only the new prefix requires collision validation in the same scene.
+    if(start_validator_) start_validator_(arms_,path_duration_,start_connection_);
     check_cancelled();
     // Cached FK construction/checking may take time. A changed robot must not
     // silently become a different starting point after the path was checked.

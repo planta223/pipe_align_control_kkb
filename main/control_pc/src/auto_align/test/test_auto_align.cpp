@@ -5,6 +5,11 @@
 #include <fstream>
 #include <limits>
 #include <tuple>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
+#include <kdl_parser/kdl_parser.hpp>
+#include <kdl/chainfksolverpos_recursive.hpp>
 
 namespace aa = auto_align;
 namespace xm = xarm_motion;
@@ -73,6 +78,29 @@ TEST(Configuration, GateRejectsDisabledMissingAndStringAndHasSeparateControl) {
     EXPECT_THROW(aa::require_execution_enabled(YAML::Load("execution: {auto_align_enabled: "+std::string(value)+"}")),std::runtime_error);
   EXPECT_THROW(aa::require_execution_enabled(YAML::Load("execution: {standalone_enabled: true}")),std::runtime_error);
   EXPECT_NO_THROW(aa::require_execution_enabled(YAML::Load("execution: {auto_align_enabled: true}")));
+}
+TEST(Configuration, AutoStartIsExplicitAndDoesNotReplaceInputFingerprint) {
+  const auto parse=[](std::initializer_list<const char*> input) {
+    std::vector<std::string> strings(input.begin(),input.end());
+    std::vector<char*> argv;
+    for(auto& arg:strings) argv.push_back(arg.data());
+    return aa::run_options(static_cast<int>(argv.size()),argv.data());
+  };
+  EXPECT_FALSE(parse({"auto_align","--step","pre_align_ready"}).auto_start);
+  EXPECT_TRUE(parse({"auto_align","--step","vision_align","--relearn","--auto-start"}).relearn);
+  EXPECT_THROW(parse({"auto_align","--step","pre_align_ready","--relearn"}),std::runtime_error);
+  EXPECT_THROW(parse({"auto_align","--step","vision_measure","--relearn"}),std::runtime_error);
+  EXPECT_THROW(parse({"auto_align","--step","vision_align","--relearn","--relearn"}),std::runtime_error);
+  for(const char* step:{"pre_align_ready","vision_align"}) {
+    auto options=parse({"auto_align","--step",step,"--auto-start","--expected-inputs","abc"});
+    EXPECT_TRUE(options.auto_start); EXPECT_EQ(options.expected_inputs,"abc");
+    EXPECT_TRUE(parse({"auto_align","--step",step,"--expected-inputs","abc","--auto-start"}).auto_start);
+  }
+  EXPECT_THROW(parse({"auto_align","--step","vision_measure","--auto-start"}),std::runtime_error);
+  EXPECT_THROW(parse({"auto_align","--step","pre_align_ready","--auto-start","--auto-start"}),std::runtime_error);
+  EXPECT_THROW(parse({"auto_align","--step","pre_align_ready","--expected-inputs"}),std::runtime_error);
+  EXPECT_THROW(parse({"auto_align","--step","pre_align_ready","--expected-inputs","--auto-start"}),std::runtime_error);
+  EXPECT_THROW(parse({"auto_align","--step","pre_align_ready","--unexpected"}),std::runtime_error);
 }
 TEST(Configuration, ClearanceAndTimeParametersAreValidated) {
   auto control = YAML::LoadFile((root/"config/control.yaml").string());
@@ -182,6 +210,73 @@ TEST(Collision, CancellationAndMalformedGeometryFailClosed) {
   auto invalid = box({0,0,0}); invalid.world_T_box.translation().x() = std::numeric_limits<double>::quiet_NaN();
   EXPECT_THROW((aa::CollisionChecker({model,model},separated_mounts(),{invalid},{})),std::runtime_error);
 }
+TEST(Collision, NewStartPrefixIsCheckedBeforeEnableAndOriginalSuffixIsReused) {
+  xm::ArmKinematics model(official_model());
+  const auto frames = YAML::LoadFile((root/"config/fixed_frames.yaml").string());
+  const auto constraints = limits();
+  for (bool blocked : {false,true}) {
+    SCOPED_TRACE(blocked);
+    double clock = 100;
+    FakeBackend left(model,xm::tcp_transform(frames,"left"),seed(),clock);
+    FakeBackend right(model,xm::tcp_transform(frames,"right"),seed(true),clock);
+    const std::array<xm::Joints,2> original{left.q,right.q};
+    std::vector<xm::MotionArm> arms;
+    for (size_t side = 0; side < 2; ++side) {
+      auto* backend = side == 0 ? &left : &right;
+      const auto value = backend->read();
+      const auto flange = value.base_T_tcp*backend->tcp.inverse();
+      xm::SdkKinematics kinematics(*backend,model,backend->tcp);
+      auto plan = std::make_unique<xm::MotionPlan>(kinematics,value.joints,flange,backend->tcp,constraints);
+      arms.push_back({side == 0 ? "left" : "right",backend,&model,backend->tcp,
+                      flange,flange,value,std::move(plan)});
+    }
+    // A synthetic sphere at unit radius from joint1 clears the box on the
+    // original path. A 0.004 rad start drift violates its 20 mm margin when blocked.
+    auto mounts = separated_mounts();
+    for (size_t side = 0; side < 2; ++side)
+      mounts[side].linear() = Eigen::AngleAxisd(-original[side][0],Eigen::Vector3d::UnitZ()).toRotationMatrix();
+    const auto collision_model = pendulum();
+    aa::CollisionChecker checker({collision_model,collision_model},mounts,
+                                  {box({1,blocked ? .062 : .1,0})},{});
+    const double duration = std::max(arms[0].plan->duration(),arms[1].plan->duration());
+    size_t original_samples = 0;
+    checker.check_path([&](double t)->aa::DualJoints {
+      ++original_samples;
+      return {arms[0].plan->sample(t/duration),arms[1].plan->sample(t/duration)};
+    },duration,{arms[0].plan->joint_speed_bound(),arms[1].plan->joint_speed_bound()},[]{return false;});
+    xm::MotionSession session(std::move(arms),constraints,[]{return false;},[&]{return clock;});
+    session.prepare_planned(clock);
+    left.q[0] += .004;
+    bool checked = false;
+    size_t prefix_samples = 0;
+    session.set_start_path_validator([&](const std::vector<xm::MotionArm>& connected,
+                                        double path_seconds,double connection_seconds) {
+      checked = true;
+      EXPECT_EQ(left.enables+right.enables,0);
+      EXPECT_GT(connection_seconds,0);
+      EXPECT_LT(connection_seconds,path_seconds);
+      checker.check_path([&](double t)->aa::DualJoints {
+        ++prefix_samples;
+        EXPECT_LE(t,connection_seconds);
+        return {connected[0].plan->sample(t/path_seconds),connected[1].plan->sample(t/path_seconds)};
+      },connection_seconds,{connected[0].plan->joint_speed_bound(),connected[1].plan->joint_speed_bound()},[]{return false;});
+    });
+    if (blocked) {
+      EXPECT_THROW(session.begin(clock),std::runtime_error);
+      EXPECT_EQ(left.enables+right.enables,0);
+    } else {
+      EXPECT_NO_THROW(session.begin(clock));
+      EXPECT_EQ(left.enables+right.enables,2);
+      EXPECT_LT(prefix_samples,original_samples);
+      for (size_t side = 0; side < 2; ++side)
+        EXPECT_LT((session.arms()[side].plan->sample(1)-original[side]).norm(),1e-12);
+      session.stop();
+    }
+    EXPECT_TRUE(checked);
+    EXPECT_GT(prefix_samples,0u);
+    EXPECT_EQ(left.sends+right.sends,0);
+  }
+}
 TEST(Environment, BoxesMatchExistingVisualizationConvention) {
   const auto input = YAML::Load(R"(floor_z_m: -1.0
 table: {enabled: true, size_m: [0.8, 1.6, 0.04], position_m: [0.1, 0.2, -0.3], rpy_rad: [0, 0, 0]}
@@ -283,3 +378,161 @@ TEST_P(PreAlignTiming, EntireSequenceKeepsCheckedPathAndLimitsWithoutRuntimeFkOr
 }
 
 INSTANTIATE_TEST_SUITE_P(Scheduler,PreAlignTiming,::testing::Combine(::testing::Bool(),::testing::Bool()));
+
+namespace {
+struct PlanningGate {
+  std::mutex mutex;
+  std::condition_variable ready;
+  int arrivals=0;
+};
+class ConcurrentBackend : public FakeBackend {
+public:
+  using FakeBackend::FakeBackend;
+  PlanningGate* gate=nullptr;
+  std::thread::id owner;
+  bool fail=false;
+  int active_queries=0;
+  xm::Pose tcp_fk(const xm::Joints& q) override {
+    struct Active { int& count; explicit Active(int& n):count(n){++count;} ~Active(){--count;} } active(active_queries);
+    if(owner==std::thread::id()) {
+      owner=std::this_thread::get_id();
+      std::unique_lock<std::mutex> lock(gate->mutex);
+      ++gate->arrivals; gate->ready.notify_all();
+      if(!gate->ready.wait_for(lock,std::chrono::seconds(2),[&]{return gate->arrivals==2;}))
+        throw std::runtime_error("Arm planning did not overlap");
+    }
+    if(fail) throw std::runtime_error("Synthetic parallel SDK failure");
+    return FakeBackend::tcp_fk(q);
+  }
+};
+std::string branched_model() {
+  return fixture("branched",R"(<robot name="branched">
+    <link name="root"/>
+    <link name="a"><collision><origin xyz="1 0 0"/><geometry><sphere radius="0.02"/></geometry></collision>
+      <collision><origin xyz="0 1 0"/><geometry><sphere radius="0.02"/></geometry></collision></link>
+    <link name="b"><collision><origin xyz="0.4 0.1 -0.2"/><geometry><sphere radius="0.02"/></geometry></collision></link>
+    <link name="c"><collision><origin xyz="0.3 0.1 0.2"/><geometry><sphere radius="0.02"/></geometry></collision></link>
+    <joint name="joint1" type="revolute"><parent link="root"/><child link="a"/><origin xyz="0.3 -0.2 0.1" rpy="0.2 -0.1 0.3"/>
+      <axis xyz="0 0 1"/><limit lower="-3" upper="3" effort="1" velocity="1"/></joint>
+    <joint name="fixed_b" type="fixed"><parent link="a"/><child link="b"/><origin xyz="0.2 0.3 0.1" rpy="-0.2 0.1 0.2"/></joint>
+    <joint name="joint2" type="revolute"><parent link="a"/><child link="c"/><origin xyz="-0.3 0.2 0.1" rpy="0.1 0.2 -0.1"/>
+      <axis xyz="1 0 0"/><limit lower="-3" upper="3" effort="1" velocity="1"/></joint></robot>)");
+}
+Eigen::Vector3d reference_point(const std::string& file,const std::string& link,
+                              const xm::Joints& q,const Eigen::Vector3d& local,const xm::Pose& mount) {
+  KDL::Tree tree; KDL::Chain chain;
+  if(!kdl_parser::treeFromFile(file,tree) || !tree.getChain("root",link,chain))
+    throw std::runtime_error("Reference FK setup failed");
+  KDL::JntArray values(chain.getNrOfJoints()); size_t index=0;
+  for(const auto& segment:chain.segments) if(segment.getJoint().getType()!=KDL::Joint::Fixed)
+    values(index++)=q[segment.getJoint().getName().back()-'1'];
+  KDL::Frame frame;
+  if(KDL::ChainFkSolverPos_recursive(chain).JntToCart(values,frame)<0)
+    throw std::runtime_error("Reference FK failed");
+  const auto point=frame*KDL::Vector(local.x(),local.y(),local.z());
+  return mount*Eigen::Vector3d(point.x(),point.y(),point.z());
+}
+}
+TEST(Planning, ArmsOverlapAndFailuresJoinBothWorkersBeforeReturning) {
+  xm::ArmKinematics model(official_model());
+  const auto frames=YAML::LoadFile((root/"config/fixed_frames.yaml").string());
+  for(bool fail:{false,true}) {
+    double clock=100; PlanningGate gate;
+    ConcurrentBackend left(model,xm::tcp_transform(frames,"left"),seed(),clock);
+    ConcurrentBackend right(model,xm::tcp_transform(frames,"right"),seed(true),clock);
+    left.gate=right.gate=&gate; left.fail=fail;
+    std::vector<xm::MotionArm> arms;
+    for(size_t side=0;side<2;++side) {
+      auto* backend=side==0?&left:&right;
+      const auto feedback=backend->read();
+      const auto flange=feedback.base_T_tcp*backend->tcp.inverse();
+      arms.push_back({side==0?"left":"right",backend,&model,backend->tcp,flange,flange,feedback,nullptr});
+    }
+    const auto construct=[&] {
+      aa::PreAlignReady ready(arms,{xm::Pose::Identity(),xm::Pose::Identity()},limits(),[]{return false;});
+      EXPECT_NE(ready.planning_diagnostics().find("mode=parallel"),std::string::npos);
+      EXPECT_NE(ready.planning_diagnostics().find("fk_calls="),std::string::npos);
+    };
+    if(fail) {
+      EXPECT_THROW(construct(),std::runtime_error);
+      EXPECT_FALSE(arms[0].plan); EXPECT_FALSE(arms[1].plan);
+    } else EXPECT_NO_THROW(construct());
+    EXPECT_NE(left.owner,right.owner);
+    EXPECT_NE(left.owner,std::this_thread::get_id());
+    EXPECT_EQ(gate.arrivals,2);
+    EXPECT_EQ(left.active_queries+right.active_queries,0);
+    EXPECT_EQ(left.enables+right.enables+left.sends+right.sends,0);
+  }
+}
+TEST(Collision, SharedFramesMatchIndependentKdlWithFixedBranchesAndMultipleShapes) {
+  const auto file=branched_model();
+  auto mounts=separated_mounts(); mounts[1].translation().x()=1000;
+  mounts[0].translation()=Eigen::Vector3d(.5,-.4,.2);
+  mounts[0].linear()=Eigen::AngleAxisd(.4,Eigen::Vector3d::UnitZ()).toRotationMatrix();
+  const std::vector<std::pair<std::string,Eigen::Vector3d>> targets{
+    {"a",{1,0,0}},{"a",{0,1,0}},{"b",{.4,.1,-.2}},{"c",{.3,.1,.2}}};
+  for(double angle:{-1.1,.2,1.4}) for(const auto& target:targets) {
+    aa::DualJoints q{xm::Joints::Zero(),xm::Joints::Zero()}; q[0][0]=angle; q[0][1]=.7;
+    const auto point=reference_point(file,target.first,q[0],target.second,mounts[0]);
+    aa::CollisionChecker far({file,file},mounts,{box(point+Eigen::Vector3d(0,0,5))},{});
+    EXPECT_NO_THROW(far.check(q));
+    EXPECT_EQ(far.stats().samples,1u);
+    EXPECT_EQ(far.stats().fk_evaluations,8u); // four link frames per arm, not per shape
+    EXPECT_GT(far.stats().aabb_rejections,0u);
+    aa::CollisionChecker contact({file,file},mounts,{box(point)},{});
+    EXPECT_THROW(contact.check(q),std::runtime_error);
+    EXPECT_GT(contact.stats().collision_queries,0u);
+  }
+  auto settings=aa::CollisionSettings(); settings.interval=1;
+  const auto path=[](double t)->aa::DualJoints {
+    aa::DualJoints q{xm::Joints::Zero(),xm::Joints::Zero()}; q[0][0]=-.7+1.4*t; q[0][1]=-.4+1.6*t; return q;
+  };
+  const auto obstacle=reference_point(file,"c",path(.25)[0],{.3,.1,.2},mounts[0]);
+  aa::CollisionChecker checker({file,file},mounts,{box(obstacle)},settings);
+  for(double t:{0.,.5,1.}) EXPECT_NO_THROW(checker.check(path(t)));
+  std::array<xm::Joints,2> speeds{xm::Joints::Zero(),xm::Joints::Zero()}; speeds[0][0]=1.4; speeds[0][1]=1.6;
+  EXPECT_THROW(checker.check_path_joint_bounds(path,1,speeds,[]{return false;}),std::runtime_error);
+  EXPECT_GT(checker.stats().subdivisions,0u);
+}
+TEST(Collision, PerJointBoundsExcludeInactiveAndSharedAncestorMotion) {
+  const auto file=fixture("common_ancestor",R"(<robot name="common">
+    <link name="root"/><link name="common"/><link name="mid"/>
+    <link name="b"><collision><origin xyz="1 0 0"/><geometry><sphere radius="0.01"/></geometry></collision></link>
+    <link name="c"><collision><origin xyz="1.07 0 0"/><geometry><sphere radius="0.01"/></geometry></collision></link>
+    <joint name="joint1" type="revolute"><parent link="root"/><child link="common"/><axis xyz="0 0 1"/><limit lower="-3" upper="3" effort="1" velocity="2"/></joint>
+    <joint name="fixed_b" type="fixed"><parent link="common"/><child link="b"/></joint>
+    <joint name="joint2" type="revolute"><parent link="common"/><child link="mid"/><axis xyz="0 1 0"/><limit lower="-3" upper="3" effort="1" velocity="2"/></joint>
+    <joint name="joint3" type="revolute"><parent link="mid"/><child link="c"/><axis xyz="1 0 0"/><limit lower="-3" upper="3" effort="1" velocity="2"/></joint></robot>)");
+  auto mounts=separated_mounts(); mounts[1].translation().x()=1000;
+  auto settings=aa::CollisionSettings(); settings.interval=1;
+  aa::CollisionChecker checker({file,file},mounts,{},settings);
+  const auto path=[](double t)->aa::DualJoints {
+    aa::DualJoints q{xm::Joints::Zero(),xm::Joints::Zero()}; q[0][0]=-1+2*t; return q;
+  };
+  checker.check_path(path,1,{2,0},[]{return false;});
+  const auto scalar_samples=checker.stats().samples;
+  std::array<xm::Joints,2> speeds{xm::Joints::Zero(),xm::Joints::Zero()}; speeds[0][0]=2;
+  checker.check_path_joint_bounds(path,1,speeds,[]{return false;});
+  EXPECT_EQ(checker.stats().samples,3u);
+  EXPECT_EQ(checker.stats().subdivisions,0u);
+  EXPECT_GT(scalar_samples,checker.stats().samples);
+  RecordProperty("scalar_samples",static_cast<int>(scalar_samples));
+  RecordProperty("per_joint_samples",static_cast<int>(checker.stats().samples));
+  speeds[0][0]=-1;
+  EXPECT_THROW(checker.check_path_joint_bounds(path,1,speeds,[]{return false;}),std::runtime_error);
+}
+
+TEST(Collision, IndependentArmsStillDetectCollisionBetweenClearEndpointsAndMidpoint) {
+  const auto file=pendulum();
+  auto mounts=separated_mounts(); mounts[1].translation().x()=2;
+  mounts[1].linear()=Eigen::AngleAxisd(std::acos(-1.),Eigen::Vector3d::UnitZ()).toRotationMatrix();
+  auto settings=aa::CollisionSettings(); settings.interval=1;
+  aa::CollisionChecker checker({file,file},mounts,{},settings);
+  const auto path=[](double t)->aa::DualJoints {
+    aa::DualJoints q{xm::Joints::Zero(),xm::Joints::Zero()}; q[0][0]=q[1][0]=-.3+1.2*t; return q;
+  };
+  for(double t:{0.,.5,1.}) EXPECT_NO_THROW(checker.check(path(t)));
+  std::array<xm::Joints,2> speeds{xm::Joints::Zero(),xm::Joints::Zero()}; speeds[0][0]=speeds[1][0]=1.2;
+  EXPECT_THROW(checker.check_path_joint_bounds(path,1,speeds,[]{return false;}),std::runtime_error);
+  EXPECT_GT(checker.stats().subdivisions,0u);
+}

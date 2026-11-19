@@ -10,6 +10,12 @@ xm::Pose orientation_align_target_base(const xm::Pose& target_base);
 }  // namespace pre_align_ready
 
 void require_execution_enabled(const YAML::Node& control);
+struct RunOptions {
+  bool auto_start = false;
+  bool relearn = false;
+  std::string expected_inputs;
+};
+RunOptions run_options(int argc, char** argv);
 struct ReadyTarget {
   std::string name;
   std::array<xm::Pose,2> flange;
@@ -29,7 +35,9 @@ public:
                 const xm::Limits& limits, const std::function<bool()>& cancelled);
   const std::array<double,3>& phase_durations() const { return durations_; }
   std::string phase(double elapsed) const;
+  const std::string& planning_diagnostics() const { return planning_diagnostics_; }
 private:
   std::array<double,3> durations_{};
+  std::string planning_diagnostics_;
 };
 }  // namespace auto_align

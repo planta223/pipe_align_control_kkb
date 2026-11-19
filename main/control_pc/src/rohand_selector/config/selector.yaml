@@ -1,6 +1,6 @@
 # 손 선택에 대응하는 task 번호다.
-left_task: 2
-right_task: 1
+left_task: 1
+right_task: 2
 both_task: 0
 left_label: "왼손"
 right_label: "오른손"

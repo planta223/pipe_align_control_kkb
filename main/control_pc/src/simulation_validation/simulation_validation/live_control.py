@@ -40,7 +40,13 @@ def arguments(argv):
     parser.add_argument('--target-pose')
     parser.add_argument('--step', choices=('pre_align_ready', 'vision_align'), help='현재 실측 자세에서 auto_align 단계를 실행합니다.')
     parser.add_argument('--no-rviz', action='store_true', help='GUI 없이 관절각·TF만 발행합니다.')
+    parser.add_argument('--auto-start', action='store_true', help='auto_align 단계의 준비·검사 후 Enter 없이 시작합니다.')
+    parser.add_argument('--relearn', action='store_true', help='vision_align 저장값 대신 새로 학습합니다.')
     args = parser.parse_args(argv)
+    if args.auto_start and not args.step:
+        parser.error('--auto-start는 --step pre_align_ready 또는 vision_align과 함께 사용하세요.')
+    if args.relearn and args.step != 'vision_align':
+        parser.error('--relearn은 --step vision_align과 함께 사용하세요.')
     if args.step:
         if args.arm != 'both' or args.start_pose or args.target_pose:
             parser.error('auto_align 단계는 --arm both를 사용하며 시작·목표 자세 인자를 받지 않습니다.')
@@ -176,6 +182,10 @@ def main(argv=None):
             motion_args = (['--step', args.step, '--expected-inputs', expected_inputs] if args.step else
                            ['--arm', args.arm, '--start-pose', args.start_pose,
                             '--target-pose', args.target_pose])
+            if args.auto_start:
+                motion_args.append('--auto-start')
+            if args.relearn:
+                motion_args.append('--relearn')
             motion = subprocess.Popen([str(executable), *motion_args])
             result = supervise(node, motion, visual, stopped)
         else:

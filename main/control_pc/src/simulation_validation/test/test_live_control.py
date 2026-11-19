@@ -112,6 +112,20 @@ class FeedbackTests(unittest.TestCase):
 
 
 class RunnerTests(unittest.TestCase):
+    def test_relearn_is_vision_only(self):
+        self.assertTrue(arguments(['--arm', 'both', '--step', 'vision_align', '--relearn']).relearn)
+        for argv in (['--arm', 'both', '--step', 'pre_align_ready', '--relearn'],
+                     ['--arm', 'both', '--start-pose', 'init1', '--target-pose', 'init1', '--relearn']):
+            with self.subTest(argv=argv), self.assertRaises(SystemExit):
+                arguments(argv)
+
+    def test_auto_start_is_supported_only_for_auto_align_steps(self):
+        for step in ('pre_align_ready', 'vision_align'):
+            self.assertTrue(arguments(['--arm', 'both', '--step', step, '--auto-start']).auto_start)
+            self.assertFalse(arguments(['--arm', 'both', '--step', step]).auto_start)
+        with self.assertRaises(SystemExit):
+            arguments(['--arm', 'both', '--start-pose', 'init1', '--target-pose', 'init1', '--auto-start'])
+
     def test_vision_align_step_has_no_saved_pose_arguments(self):
         args = arguments(['--arm', 'both', '--step', 'vision_align'])
         self.assertIsNone(args.start_pose)
@@ -183,7 +197,7 @@ class RunnerTests(unittest.TestCase):
         source = Path(default_frames_file()).parent
         parent = source.parent / '_colcon/build/simulation_validation'
         parent.mkdir(parents=True, exist_ok=True)
-        for target in ('pre_align_ready', 'pre_align_ready_v2'):
+        for target, auto_start in (('pre_align_ready', False), ('pre_align_ready_v2', True)):
             with self.subTest(target=target), tempfile.TemporaryDirectory(dir=parent) as tmp:
                 config = Path(tmp) / 'config'
                 config.mkdir()
@@ -207,9 +221,10 @@ class RunnerTests(unittest.TestCase):
                         patch('simulation_validation.live_control.stop_process'), \
                         patch('simulation_validation.live_control.rclpy.init'), \
                         patch('simulation_validation.live_control.rclpy.shutdown'):
-                    self.assertEqual(main(['--arm', 'both', '--step', 'pre_align_ready']), 0)
+                    extra = ['--auto-start'] if auto_start else []
+                    self.assertEqual(main(['--arm', 'both', '--step', 'pre_align_ready', *extra]), 0)
                     self.assertEqual(popen.call_args_list[1].args[0],
-                                     [str(executable), '--step', 'pre_align_ready', '--expected-inputs', expected])
+                                     [str(executable), '--step', 'pre_align_ready', '--expected-inputs', expected, *extra])
                     goals = feedback.call_args.args[2]
                     coordinates = load_yaml(config / 'arm_poses.yaml')['poses'][target]
                     for side in ('left', 'right'):
@@ -221,6 +236,27 @@ class RunnerTests(unittest.TestCase):
                 patch('simulation_validation.live_control.subprocess.Popen') as popen:
             self.assertEqual(main(['--arm', 'both', '--step', 'pre_align_ready']), 1)
             popen.assert_not_called()
+
+    def test_runner_forwards_vision_relearn_and_auto_start(self):
+        source = Path(default_frames_file()).parent
+        with tempfile.TemporaryDirectory() as tmp:
+            executable = Path(tmp) / 'lib/auto_align/auto_align'
+            executable.parent.mkdir(parents=True)
+            executable.touch()
+            with patch('simulation_validation.live_control.settings', return_value=source), \
+                    patch('simulation_validation.live_control.sys.stdin.isatty', return_value=True), \
+                    patch('simulation_validation.live_control.get_package_prefix', return_value=tmp), \
+                    patch('simulation_validation.live_control.ControlFeedback'), \
+                    patch('simulation_validation.live_control.subprocess.Popen') as popen, \
+                    patch('simulation_validation.live_control.wait_for_visualization'), \
+                    patch('simulation_validation.live_control.supervise', return_value=0), \
+                    patch('simulation_validation.live_control.stop_process'), \
+                    patch('simulation_validation.live_control.rclpy.init'), \
+                    patch('simulation_validation.live_control.rclpy.shutdown'):
+                self.assertEqual(main(['--arm', 'both', '--step', 'vision_align', '--auto-start', '--relearn']), 0)
+                command = popen.call_args_list[1].args[0]
+                self.assertEqual(command[:3], [str(executable), '--step', 'vision_align'])
+                self.assertEqual(command[-2:], ['--auto-start', '--relearn'])
 
     def test_required_arguments_and_no_gate_override(self):
         for argv in ([], ['--arm', 'both'],

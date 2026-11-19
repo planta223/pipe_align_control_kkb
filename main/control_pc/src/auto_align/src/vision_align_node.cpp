@@ -73,6 +73,10 @@ public:
     std_msgs::msg::String m; m.data=full; status_->publish(m); RCLCPP_INFO(get_logger(),"%s",full.c_str());
   }
   double elapsed() const override { return begun_==0?0:xm::steady_seconds()-begun_; }
+  std::optional<xm::Pose> tcp_pose(size_t side) override {
+    require(side<2 && robots_[side],"학습 기준 TCP를 읽을 수 없습니다.");
+    return robots_[side]->read().base_T_tcp;
+  }
   void publish_stopped_feedback() {
     // Only called by the start-path validator, before either backend is enabled.
     // SDK read() also consults cancelled(); prevent recursive service/read calls.
@@ -101,8 +105,10 @@ public:
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
   }
-  void ready() {
-    report("READY: vision_align step4~7 / 좌우 CAD 끝단·camera 축 표시를 확인한 뒤 Enter / 작은 시험 이동이 시작됩니다.");
+  void ready(bool auto_start) {
+    report(auto_start?"READY: vision_align step4~7 / 자동 시작 / 작은 시험 이동이 시작됩니다.":
+      "READY: vision_align step4~7 / 좌우 CAD 끝단·camera 축 표시를 확인한 뒤 Enter / 작은 시험 이동이 시작됩니다.");
+    if(auto_start) { service(); return; }
     while(true) {
       service(); pollfd fd{STDIN_FILENO,POLLIN,0}; const int n=poll(&fd,1,0);
       require(n>=0 && !(fd.revents&(POLLERR|POLLHUP|POLLNVAL)),"터미널 입력이 종료됐습니다.");
@@ -131,20 +137,23 @@ public:
       arms.push_back({i==0?"left":"right",robots_[i],models_[i],tcp,before[i].base_T_tcp*tcp.inverse(),target*tcp.inverse(),before[i],std::move(plan)});
     }
     const double duration=std::max(arms[0].plan->duration(),arms[1].plan->duration());
-    checker_->check_path([&](double t)->DualJoints {
+    checker_->check_path_joint_bounds([&](double t)->DualJoints {
       return {arms[0].plan->sample(t/duration),arms[1].plan->sample(t/duration)};
-    },duration,{arms[0].plan->joint_speed_bound(),arms[1].plan->joint_speed_bound()},[this]{return cancelled();});
+    },duration,{arms[0].plan->joint_speed_bounds(),arms[1].plan->joint_speed_bounds()},[this]{return cancelled();});
+    RCLCPP_INFO(get_logger(),"PERF: COLLISION phase=vision_move %s",checker_->diagnostics().c_str());
     xm::MotionSession session(std::move(arms),limits_,[this]{return cancelled();});
-    session.set_start_path_validator([&](const std::vector<xm::MotionArm>& connected,double seconds) {
-      report("START_CONNECTION: 실측 자세에서 기존 경로로 연결 / 충돌 경로 재검사");
+    session.set_start_path_validator([&](const std::vector<xm::MotionArm>& connected,
+                                        double path_seconds,double connection_seconds) {
+      report("START_CONNECTION: 새 시작 연결 구간만 충돌 재검사 / 기존 경로 검사 결과 재사용");
       double published=0;
-      checker_->check_path([&](double t)->DualJoints {
-        return {connected[0].plan->sample(t/seconds),connected[1].plan->sample(t/seconds)};
-      },seconds,{connected[0].plan->joint_speed_bound(),connected[1].plan->joint_speed_bound()},[&] {
+      checker_->check_path_joint_bounds([&](double t)->DualJoints {
+        return {connected[0].plan->sample(t/path_seconds),connected[1].plan->sample(t/path_seconds)};
+      },connection_seconds,{connected[0].plan->joint_speed_bounds(),connected[1].plan->joint_speed_bounds()},[&] {
         if(cancelled()) return true;
         if(xm::steady_seconds()-published>=.05) {publish_stopped_feedback();published=xm::steady_seconds();}
         return false;
       });
+      RCLCPP_INFO(get_logger(),"PERF: COLLISION phase=start_connection %s",checker_->diagnostics().c_str());
     });
     session.prepare_planned(xm::steady_seconds()); service();
     executing_=true;
@@ -213,7 +222,8 @@ private:
          <<" axis_X_deg="<<std::acos(std::clamp(std::abs(p.axis.x()),0.,1.))*180/std::acos(-1.)
          <<" axis_camera=["<<p.axis.transpose()<<"] axis_sign="<<sign
          <<" angle_xy_deg="<<std::atan2(a.y(),a.x())*180/std::acos(-1.)
-         <<" angle_xz_deg="<<std::atan2(a.z(),a.x())*180/std::acos(-1.);
+         <<" angle_xz_deg="<<std::atan2(a.z(),a.x())*180/std::acos(-1.)
+         <<" mean_position_error_m="<<pair.position_error[i]<<" mean_angle_error_rad="<<pair.angle_error[i];
       marker(i,p.endpoint,p.endpoint+.1*p.axis,false);
     }
     const Eigen::Vector3d center=baseline_?(baseline_->pipes[0].endpoint+baseline_->pipes[1].endpoint)/2:
@@ -255,13 +265,13 @@ int vision_align_main(int argc,char** argv) {
   std::array<std::unique_ptr<xm::XArmBackend>,2> backends;
   int result=0;
   try {
-    require((argc==3 || argc==5) && (argc==3 || std::string(argv[3])=="--expected-inputs"),"--step vision_measure 또는 vision_align을 사용하세요.");
+    const auto options=run_options(argc,argv);
     const bool readonly=std::string(argv[2])=="vision_measure";
     const auto root=std::filesystem::path(AUTO_ALIGN_CONTROL_PC_DIR);
     const auto control_text=read_file(root/"config/control.yaml");const auto control=YAML::Load(control_text);
     const auto settings=vision_settings(control);
     if(!readonly) { require_execution_enabled(control);require_vision_enabled(control);require(isatty(STDIN_FILENO),"Enter·Ctrl+C 터미널이 필요합니다."); }
-    if(argc==5) require(input_fingerprint(control_text,read_file(root/"config/arm_poses.yaml"))==argv[4],"시각화 준비 중 설정이 변경됐습니다.");
+    if(!options.expected_inputs.empty()) require(input_fingerprint(control_text,read_file(root/"config/arm_poses.yaml"))==options.expected_inputs,"시각화 준비 중 설정이 변경됐습니다.");
     const auto frames=YAML::LoadFile((root/"config/fixed_frames.yaml").string());
     struct sigaction action{};action.sa_handler=signal_handler;sigemptyset(&action.sa_mask);
     sigaction(SIGINT,&action,nullptr);sigaction(SIGTERM,&action,nullptr);
@@ -285,7 +295,18 @@ int vision_align_main(int argc,char** argv) {
       CollisionChecker checker(urdfs,{mounting_transform(frames,"left"),mounting_transform(frames,"right")},environment_boxes(environment),collision_settings(control));
       checker.check({backends[0]->read().joints,backends[1]->read().joints});
       node->attach({backends[0].get(),backends[1].get()},{models[0].get(),models[1].get()},&checker,config.limits);
-      node->ready();node->start_control();VisionAlign controller(settings,*node);controller.run();
+      // Exclude gains/speeds: the persisted mapping depends on geometry and
+      // coordinate conventions. Remote camera/regrasp changes use context_id.
+      YAML::Node identity;identity["robots"]=control["robots"];identity["frames"]=frames;
+      identity["model_fingerprint"]=input_fingerprint(read_file(urdfs[0]),read_file(urdfs[1]));
+      for(const auto* key:{"left_topic","right_topic","frame_id","pipe_length_m","left_endpoint_z_m","right_endpoint_z_m"})
+        identity[key]=control["vision_align"][key];
+      identity["context_id"]=settings.cache_context;identity["feature_version"]=1;
+      const auto mesh=root.parent_path().parent_path()/"docs/vision_pc/pipe1.obj";
+      const auto mesh_text=std::filesystem::exists(mesh)?read_file(mesh):"no-local-mesh";
+      VisionCache cache(root/"_state/vision_align/jacobians.yaml",input_fingerprint(YAML::Dump(identity),mesh_text),settings);
+      node->report(cache.load(options.relearn));
+      node->ready(options.auto_start);node->start_control();VisionAlign controller(settings,*node,&cache);controller.run();
       node->report("COMPLETED: vision_align / step7 비전 정렬 유지 확인");
     }
   } catch(const std::exception& e) {

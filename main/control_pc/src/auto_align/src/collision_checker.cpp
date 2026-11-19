@@ -4,12 +4,12 @@
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
 #include <fcl/fcl.h>
-#include <kdl/chainfksolverpos_recursive.hpp>
 #include <kdl_parser/kdl_parser.hpp>
 #include <urdf/model.h>
 #include <cmath>
 #include <filesystem>
 #include <map>
+#include <iomanip>
 #include <sstream>
 
 namespace auto_align {
@@ -178,57 +178,80 @@ struct CollisionChecker::Impl {
   struct Object {
     std::string name, link;
     int arm = -1;
-    KDL::Chain chain;
+    size_t frame_index = 0;
     xm::Pose local = xm::Pose::Identity();
     std::unique_ptr<fcl::CollisionObjectd> collision;
-    // 관절 속도 상한을 형상 점의 속도 상한으로 변환하는 계수다.
-    double speed_factor = 0;
+    xm::Joints radii = xm::Joints::Zero();
+    std::array<bool,7> ancestors{};
+  };
+  struct FrameNode { KDL::Segment segment; int parent = -1, joint = -1; };
+  struct Pair {
+    size_t first, second;
+    std::array<xm::Joints,2> radii{xm::Joints::Zero(),xm::Joints::Zero()};
+  };
+  struct Timer {
+    double& seconds;
+    double started = xm::steady_seconds();
+    ~Timer() { seconds += xm::steady_seconds()-started; }
   };
   CollisionSettings settings;
+  CollisionStats stats;
   std::array<xm::Pose,2> mounts;
+  std::array<std::vector<FrameNode>,2> nodes;
+  std::array<std::vector<KDL::Frame>,2> frames;
+  std::array<std::map<std::string,size_t>,2> link_frames;
   std::vector<Object> objects;
-  std::vector<std::pair<size_t,size_t>> pairs;
-  size_t checks = 0;
+  std::vector<Pair> pairs;
 
+  static int joint_index(const std::string& name) {
+    require(name.size()==6 && name.rfind("joint",0)==0 && name[5]>='1' && name[5]<='7',
+            "충돌 URDF의 관절 이름이 잘못됐습니다: "+name);
+    return name[5]-'1';
+  }
   void update(const DualJoints& joints) {
+    Timer timer{stats.fk_seconds};
     for (const auto& q : joints) require(q.allFinite(),"충돌 검사 관절각이 유효하지 않습니다.");
+    // Parent-first traversal computes each link once, including links without
+    // collision geometry. Multiple collision shapes reuse the same frame.
+    for(size_t side=0;side<2;++side) {
+      for(size_t i=0;i<nodes[side].size();++i) {
+        const auto& node=nodes[side][i];
+        frames[side][i]=node.parent<0 ? KDL::Frame::Identity() :
+          frames[side][node.parent]*node.segment.pose(node.joint<0 ? 0 : joints[side][node.joint]);
+        ++stats.fk_evaluations;
+      }
+    }
     for (auto& object : objects) {
       if (object.arm < 0) continue;
-      KDL::JntArray values(object.chain.getNrOfJoints());
-      size_t index = 0;
-      for (const auto& segment : object.chain.segments) {
-        const auto& joint = segment.getJoint();
-        if (joint.getType() == KDL::Joint::Fixed) continue;
-        const auto& name = joint.getName();
-        require(name.size() == 6 && name.rfind("joint",0) == 0 && name[5] >= '1' && name[5] <= '7',
-          "충돌 URDF의 관절 이름이 잘못됐습니다: "+name);
-        values(index++) = joints[object.arm][name[5]-'1'];
-      }
-      KDL::Frame frame;
-      require(KDL::ChainFkSolverPos_recursive(object.chain).JntToCart(values,frame) >= 0,"충돌 모델 FK 실패");
-      object.collision->setTransform(mounts[object.arm]*pose(frame)*object.local);
+      object.collision->setTransform(mounts[object.arm]*pose(frames[object.arm][object.frame_index])*object.local);
       object.collision->computeAABB();
       require(finite_aabb(object.collision->getAABB()),"충돌 형상의 좌표 범위를 벗어났습니다.");
     }
   }
-  bool inspect(const DualJoints& joints, const std::array<double,2>& speeds, double half_interval) {
-    require(++checks <= settings.maximum_checks,"충돌 검사 횟수 상한을 초과했습니다.");
+  bool inspect(const DualJoints& joints, const std::array<xm::Joints,2>& speeds, double half_interval) {
+    require(++stats.samples <= settings.maximum_checks,"충돌 검사 횟수 상한을 초과했습니다.");
     update(joints);
     bool certified = true;
-    for (const auto& [i,j] : pairs) {
-      auto& first = objects[i]; auto& second = objects[j];
-      const double motion = half_interval*((first.arm<0?0:first.speed_factor*speeds[first.arm])+
-        (second.arm<0?0:second.speed_factor*speeds[second.arm]));
-      const double threshold = settings.margin+motion;
+    for (const auto& pair : pairs) {
+      ++stats.pair_checks;
+      auto& first = objects[pair.first]; auto& second = objects[pair.second];
+      const double motion=half_interval*(pair.radii[0].dot(speeds[0])+pair.radii[1].dot(speeds[1]));
+      const double threshold = settings.margin+motion+1e-12;
       const auto& a = first.collision->getAABB(); const auto& b = second.collision->getAABB();
       Eigen::Vector3d gap;
       for (int axis = 0; axis < 3; ++axis)
         gap[axis] = std::max({0.,a.min_[axis]-b.max_[axis],b.min_[axis]-a.max_[axis]});
-      if (gap.norm() > threshold) continue;
+      if (gap.norm() > threshold) { ++stats.aabb_rejections; continue; }
+      Timer timer{stats.narrowphase_seconds};
       fcl::CollisionResultd contacts;
+      ++stats.collision_queries;
       fcl::collide(first.collision.get(),second.collision.get(),fcl::CollisionRequestd(),contacts);
       fcl::DistanceResultd distance_result;
-      const double distance = contacts.isCollision() ? 0 : fcl::distance(first.collision.get(),second.collision.get(),fcl::DistanceRequestd(),distance_result);
+      double distance=0;
+      if(!contacts.isCollision()) {
+        ++stats.distance_queries;
+        distance=fcl::distance(first.collision.get(),second.collision.get(),fcl::DistanceRequestd(),distance_result);
+      }
       require(std::isfinite(distance) && distance >= 0,"충돌 거리 계산 실패: "+first.name+" / "+second.name);
       if (distance <= settings.margin) {
         std::ostringstream message;
@@ -241,13 +264,15 @@ struct CollisionChecker::Impl {
     return certified;
   }
   void interval(const std::function<DualJoints(double)>& sample, double start, double end,
-                const std::array<double,2>& speeds, const std::function<bool()>& cancelled) {
+                const std::array<xm::Joints,2>& speeds, const std::function<bool()>& cancelled, size_t depth=0) {
     require(!cancelled(),"충돌 검사가 취소됐습니다.");
+    stats.max_depth=std::max(stats.max_depth,depth);
     const double middle = (start+end)/2;
     if (inspect(sample(middle),speeds,(end-start)/2)) return;
     require(end-start > settings.minimum_interval,"구간 사이 충돌 여유거리를 보증하지 못했습니다.");
-    interval(sample,start,middle,speeds,cancelled);
-    interval(sample,middle,end,speeds,cancelled);
+    ++stats.subdivisions;
+    interval(sample,start,middle,speeds,cancelled,depth+1);
+    interval(sample,middle,end,speeds,cancelled,depth+1);
   }
 };
 
@@ -266,22 +291,55 @@ CollisionChecker::CollisionChecker(const std::array<std::string,2>& urdfs,
     require(models[side].initFile(urdfs[side]),"충돌 URDF를 읽지 못했습니다.");
     KDL::Tree tree;
     require(kdl_parser::treeFromUrdfModel(models[side],tree),"충돌 KDL 트리를 만들지 못했습니다.");
+    std::function<void(urdf::LinkConstSharedPtr,int)> visit;
+    visit=[&](urdf::LinkConstSharedPtr link,int parent) {
+      const auto segment=tree.getSegment(link->name);
+      require(segment!=tree.getSegments().end(),"충돌 링크 경로가 없습니다.");
+      Impl::FrameNode node;
+      node.segment=segment->second.segment; node.parent=parent;
+      if(link->parent_joint && link->parent_joint->type!=urdf::Joint::FIXED) {
+        require(link->parent_joint->type==urdf::Joint::REVOLUTE || link->parent_joint->type==urdf::Joint::CONTINUOUS,
+                "충돌 모델에는 회전·고정 관절만 사용할 수 있습니다.");
+        node.joint=Impl::joint_index(link->parent_joint->name);
+      }
+      const int index=static_cast<int>(impl_->nodes[side].size());
+      impl_->nodes[side].push_back(std::move(node));
+      impl_->link_frames[side][link->name]=index;
+      for(const auto& child:link->child_links) visit(child,index);
+    };
+    visit(models[side].getRoot(),-1);
+    impl_->frames[side].resize(impl_->nodes[side].size());
     size_t count = 0;
     for (const auto& [name,link] : models[side].links_) {
       for (const auto& collision : link->collision_array) {
         Impl::Object object;
-        object.arm = side; object.link = name;
+        object.arm = side; object.link = name; object.frame_index=impl_->link_frames[side].at(name);
         object.name = std::string(side==0?"left/":"right/")+name;
-        require(tree.getChain(models[side].getRoot()->name,name,object.chain),"충돌 링크 경로가 없습니다.");
         object.local = pose(collision->origin);
         valid_pose(object.local);
         auto shape = geometry(collision->geometry);
         object.collision = std::make_unique<fcl::CollisionObjectd>(shape);
         shape->computeLocalAABB();
         require(finite_aabb(shape->aabb_local),"충돌 형상의 크기가 유효하지 않습니다.");
-        double reach = shape->aabb_local.center().norm()+shape->aabb_local.radius()+object.local.translation().norm();
-        for (const auto& segment : object.chain.segments) reach += segment.getFrameToTip().p.Norm();
-        object.speed_factor = object.chain.getNrOfJoints()*reach;
+        // For ancestor joint j, every shape point is within the shape radius
+        // plus downstream URDF translation lengths of that joint's pivot.
+        // Exclude j's own parent offset; it moves the pivot, not the lever arm.
+        double radius=shape->aabb_local.center().norm()+shape->aabb_local.radius()+object.local.translation().norm();
+        urdf::LinkConstSharedPtr ancestor=link;
+        while(ancestor->parent_joint) {
+          require(std::isfinite(radius) && radius>=0,"충돌 형상의 회전 반경이 유효하지 않습니다.");
+          const auto& joint=ancestor->parent_joint;
+          if(joint->type!=urdf::Joint::FIXED) {
+            const int index=Impl::joint_index(joint->name);
+            object.radii[index]=radius*(1+1e-12)+1e-12;
+            object.ancestors[index]=true;
+          }
+          const auto& p=joint->parent_to_joint_origin_transform.position;
+          const Eigen::Vector3d offset(p.x,p.y,p.z);
+          require(offset.allFinite(),"충돌 관절 원점이 유효하지 않습니다.");
+          radius+=offset.norm();
+          ancestor=ancestor->getParent();
+        }
         impl_->objects.push_back(std::move(object)); ++count;
       }
     }
@@ -292,7 +350,7 @@ CollisionChecker::CollisionChecker(const std::array<std::string,2>& urdfs,
     valid_pose(box.world_T_box);
     Impl::Object object; object.name = box.name;
     object.collision = std::make_unique<fcl::CollisionObjectd>(std::make_shared<fcl::Boxd>(box.size),box.world_T_box);
-    require(finite_aabb(object.collision->getAABB()),"환경 형상의 좌표 범위를 벗어났습니다.");
+    require(finite_aabb(object.collision->getAABB()),"환경 형상의 크기가 유효하지 않습니다.");
     impl_->objects.push_back(std::move(object));
   }
   for (size_t i = 0; i < impl_->objects.size(); ++i) {
@@ -300,22 +358,49 @@ CollisionChecker::CollisionChecker(const std::array<std::string,2>& urdfs,
       const auto& a = impl_->objects[i]; const auto& b = impl_->objects[j];
       if (a.arm < 0 && b.arm < 0) continue;
       if (a.arm >= 0 && a.arm == b.arm && adjacent(models[a.arm],a.link,b.link)) continue;
-      impl_->pairs.emplace_back(i,j);
+      Impl::Pair pair{i,j};
+      if(a.arm>=0) pair.radii[a.arm]+=a.radii;
+      if(b.arm>=0) pair.radii[b.arm]+=b.radii;
+      // Common ancestor rotations rigidly transform both objects together and
+      // cannot change their separation. Only unshared joints contribute.
+      if(a.arm>=0 && a.arm==b.arm)
+        for(int k=0;k<7;++k) if(a.ancestors[k] && b.ancestors[k]) pair.radii[a.arm][k]=0;
+      impl_->pairs.push_back(std::move(pair));
     }
   }
 }
 CollisionChecker::~CollisionChecker() = default;
 void CollisionChecker::check(const DualJoints& joints) {
-  impl_->checks = 0;
-  impl_->inspect(joints,{0,0},0);
+  impl_->stats={};
+  Impl::Timer timer{impl_->stats.total_seconds};
+  const std::array<xm::Joints,2> speeds{xm::Joints::Zero(),xm::Joints::Zero()};
+  impl_->inspect(joints,speeds,0);
 }
 void CollisionChecker::check_path(const std::function<DualJoints(double)>& sample, double duration,
                                 const std::array<double,2>& speeds, const std::function<bool()>& cancelled) {
+  for(double speed:speeds) require(std::isfinite(speed) && speed>=0,"관절 속도 상한이 잘못됐습니다.");
+  check_path_joint_bounds(sample,duration,{xm::Joints::Constant(speeds[0]),xm::Joints::Constant(speeds[1])},cancelled);
+}
+void CollisionChecker::check_path_joint_bounds(const std::function<DualJoints(double)>& sample, double duration,
+                                const std::array<xm::Joints,2>& speeds, const std::function<bool()>& cancelled) {
   require(std::isfinite(duration) && duration > 0 && duration <= 600,"경로 검사 시간 범위가 잘못됐습니다.");
-  for (double speed : speeds) require(std::isfinite(speed) && speed >= 0,"관절 속도 상한이 잘못됐습니다.");
-  impl_->checks = 0;
-  impl_->inspect(sample(0),{0,0},0); impl_->inspect(sample(duration),{0,0},0);
+  for(const auto& speed:speeds) require(speed.allFinite() && (speed.array()>=0).all(),"관절 속도 상한이 잘못됐습니다.");
+  impl_->stats={};
+  Impl::Timer timer{impl_->stats.total_seconds};
+  const std::array<xm::Joints,2> stopped{xm::Joints::Zero(),xm::Joints::Zero()};
+  impl_->inspect(sample(0),stopped,0); impl_->inspect(sample(duration),stopped,0);
   for (double start = 0; start < duration; start += impl_->settings.interval)
     impl_->interval(sample,start,std::min(start+impl_->settings.interval,duration),speeds,cancelled);
+}
+const CollisionStats& CollisionChecker::stats() const { return impl_->stats; }
+std::string CollisionChecker::diagnostics() const {
+  const auto& s=impl_->stats;
+  std::ostringstream out; out<<std::fixed<<std::setprecision(6)
+    <<"total_s="<<s.total_seconds<<" samples="<<s.samples<<" fk_evaluations="<<s.fk_evaluations
+    <<" pair_checks="<<s.pair_checks<<" aabb_rejections="<<s.aabb_rejections
+    <<" collision_queries="<<s.collision_queries<<" distance_queries="<<s.distance_queries
+    <<" subdivisions="<<s.subdivisions<<" max_depth="<<s.max_depth
+    <<" fk_transform_s="<<s.fk_seconds<<" narrowphase_s="<<s.narrowphase_seconds;
+  return out.str();
 }
 }  // namespace auto_align

@@ -209,8 +209,89 @@ source ~/project/xarm_sdk/install/setup.bash
 source main/control_pc/_colcon/install/local_setup.bash
 export ROS_DOMAIN_ID=8
 export ROS_LOCALHOST_ONLY=0
-ros2 run auto_align auto_align --step pre_align_ready
+ros2 run auto_align auto_align --step pre_align_ready --auto-start
 ```
 
-`READY`에서 목표 자세와 예상 시간을 확인한 뒤 Enter로 양팔 준비 이동을 실행한다.
+위 명령은 `--auto-start`가 있으므로 준비·검사 후 자동으로 양팔 준비 이동을 시작한다.
+수동으로 확인한 뒤 실행하려면 이 옵션을 빼고 `READY`에서 Enter를 누른다.
 RViz는 시작하지 않으며, 완료하면 제어기가 종료된다. Ctrl+C로 중지할 수 있다.
+
+준비와 검사를 마친 뒤 Enter 없이 시작하려면 다음을 사용한다. 실행 허용·충돌 검사·Ctrl+C 중지는 유지된다.
+
+```bash
+ros2 run auto_align auto_align --step pre_align_ready --auto-start
+```
+
+RViz를 함께 실행할 때도 같은 옵션을 사용할 수 있다.
+
+```bash
+ros2 run simulation_validation live_control --arm both --step pre_align_ready --auto-start
+```
+
+## 10. 터미널 10 — vision-align 측정 / 정렬
+
+준비 자세까지 이동한 뒤 비전 PC의 FoundationPose를 실행하고, 터미널 8에서 좌우 pose 수신을 확인한다.
+이미 준비 자세이면 `pre_align_ready`를 반복 실행하지 않는다. 손의 grasp를 유지하며 teleop·init·다른 팔 제어기는 종료한다.
+신규 학습은 회전·병진 각각 팔당 3회, 양팔 6회이며 복귀 이동을 생략한다. 둘 다 새로 학습하면 총 12회다.
+보정 이동은 별도이며, 유효한 저장값이 있으면 실제 보정 응답을 검증하면서 재사용한다.
+
+### 측정 전용 — 로봇 이동 없음
+
+```bash
+cd ~/pipe_align_control_kkb
+source /opt/ros/humble/setup.bash
+source ~/project/xarm_sdk/install/setup.bash
+source main/control_pc/_colcon/install/local_setup.bash
+export ROS_DOMAIN_ID=8
+export ROS_LOCALHOST_ONLY=0
+ros2 run auto_align auto_align --step vision_measure
+```
+
+로봇 SDK에 연결하지 않고 좌우 끝단·축 벡터·부호 있는 각도 성분을 기록한다. 측정 확인 후 Ctrl+C로 종료한다.
+
+### RViz 없이 vision-align 실행
+
+같은 환경에서 실행한다. `main/control_pc/config/control.yaml`의 `execution.auto_align_enabled`와
+`execution.vision_align_enabled`가 모두 `true`여야 한다.
+
+```bash
+ros2 run auto_align auto_align --step vision_align
+```
+
+기본은 `READY` 후 Enter로 시작한다. 준비·검사를 마치면 바로 시작하려면 다음을 사용한다.
+
+```bash
+ros2 run auto_align auto_align --step vision_align --auto-start
+```
+
+### RViz와 함께 실행
+
+위 직접 실행 명령 대신 다음을 사용한다. 두 제어기를 동시에 실행하지 않는다.
+
+```bash
+ros2 run simulation_validation live_control --arm both --step vision_align
+```
+
+이 명령에도 `--auto-start`를 추가할 수 있다. Ctrl+C로 정지·종료하며, 로그는
+`main/control_pc/_log/auto_align/`에 저장한다. 카메라 좌표계 진단은 `/auto_align/vision_diagnostics`에서 확인한다.
+
+### 저장값을 사용하지 않고 새로 학습
+
+카메라 이동·캘리브레이션/추적 모델 변경·파이프를 다시 잡은 뒤에는 `vision_align.cache.context_id`를 바꾸거나
+`--relearn`으로 실행한다. 이미 정렬된 팔·단계는 학습을 생략한다.
+
+```bash
+ros2 run auto_align auto_align --step vision_align --relearn
+# 자동 시작을 함께 사용:
+ros2 run auto_align auto_align --step vision_align --relearn --auto-start
+# RViz를 함께 사용할 때는 위 명령 대신:
+ros2 run simulation_validation live_control --arm both --step vision_align --relearn
+```
+
+저장 위치는 `main/control_pc/_state/vision_align/jacobians.yaml`이다. 설정은 `control.yaml`의
+`vision_align.cache`에 있으며, `enabled: false`이면 읽기·저장을 모두 끈다.
+기본은 24시간, 저장 위치에서 30 mm·방향에서 0.15 rad 이내의 후보만 검증한다.
+검증 실패 시 해당 팔·단계만 재학습하며, 추적·충돌·이동 범위 이상은 중지한다.
+step7 성공 후에만 저장하므로 실패·중단한 실행으로 기존 정상값을 덮어쓰지 않는다.
+`CACHE_VALIDATE:`와 `VISION_MOVES:`로 재사용·학습 횟수를 확인한다. 검증은 보정 이동에 포함되므로 중복 합산하지 않는다.
+자세한 판정 기준은 [auto_align 안내](../../main/control_pc/src/auto_align/README.md#학습값-저장검증재사용)를 따른다.

@@ -9,6 +9,7 @@ __pycache__/
 *.local.yaml
 /main/control_pc/_colcon/
 /main/control_pc/_log/
+/main/control_pc/_state/
 /main/vision_pc/_log/*
 !/main/vision_pc/_log/.gitkeep
 /main/vision_pc/_colcon/*

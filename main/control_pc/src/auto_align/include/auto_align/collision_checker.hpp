@@ -17,6 +17,11 @@ struct EnvironmentBox {
   xm::Pose world_T_box;
   Eigen::Vector3d size;
 };
+struct CollisionStats {
+  size_t samples = 0, fk_evaluations = 0, pair_checks = 0, aabb_rejections = 0;
+  size_t collision_queries = 0, distance_queries = 0, subdivisions = 0, max_depth = 0;
+  double total_seconds = 0, fk_seconds = 0, narrowphase_seconds = 0;
+};
 std::vector<EnvironmentBox> environment_boxes(const YAML::Node& environment);
 class CollisionChecker {
 public:
@@ -30,6 +35,11 @@ public:
   void check_path(const std::function<DualJoints(double)>& sample, double duration,
                   const std::array<double,2>& joint_speed_bounds,
                   const std::function<bool()>& cancelled);
+  void check_path_joint_bounds(const std::function<DualJoints(double)>& sample, double duration,
+                              const std::array<xm::Joints,2>& joint_speed_bounds,
+                              const std::function<bool()>& cancelled);
+  const CollisionStats& stats() const;
+  std::string diagnostics() const;
 private:
   struct Impl;
   std::unique_ptr<Impl> impl_;

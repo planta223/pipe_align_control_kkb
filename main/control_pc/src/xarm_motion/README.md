@@ -25,8 +25,11 @@ PYTHONDONTWRITEBYTECODE=1 colcon --log-base main/control_pc/_colcon/log build \
   --build-base main/control_pc/_colcon/build \
   --install-base main/control_pc/_colcon/install \
   --symlink-install \
-  --cmake-args -DBUILD_TESTING=ON
+  --cmake-args -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo
 ```
+
+빌드 유형을 지정하지 않으면 `RelWithDebInfo`(최적화·디버그 심볼 포함)를 기본으로 사용한다.
+명시적으로 지정한 `Debug` 등 다른 빌드 유형은 유지한다.
 
 ## 단독 실행
 
@@ -65,7 +68,10 @@ ros2 run xarm_motion xarm_motion \
 5차 보간 연결 구간을 추가한다. 연결의 시작·끝 속도와 가속도는 0이며 기존 경로의 관절해는 변경하지 않는다.
 SDK FK 캐시·관절 제한·flange/TCP 속도·관절 가속도를 연결 구간에서도 확인한다. 큰 변화는 기존 시작 허용값으로
 연결 전에 거부한다. 연결 경로 검사 중 허용 범위를 넘는 추가 이동이 생겨도 활성화 전에 거부한다.
-`auto_align`은 새 연결을 포함한 전체 경로의 모델 충돌을 다시 검사한다. 모든 검사와 SDK FK는 활성화 전에 끝난다.
+`auto_align`은 새 시작 연결 구간만 모델 충돌을 재검사한다. 기존 경로는 관절해·보간을 그대로 보존하며,
+동일 실행의 고정 환경·충돌 설정에서 최초 전체 경로 검사를 통과한 결과를 재사용한다.
+연결 구간의 양 끝점과 구간 사이 여유거리 검사는 유지하며, 검사 후 실측 자세도 다시 확인한다.
+모든 검사와 SDK FK는 활성화 전에 끝난다.
 명령 가속도의 첫 기준은 연결 구간의 실측 시작점이며, 매 주기 측정 흔들림으로 명령 기준을 덮어쓰지 않는다.
 `MEASURE`의 `start_connection_s`는 연결에 할당된 실행 예상 시간이다. 기존 1초 최소 이동 시간 정책은 유지한다.
 

@@ -89,3 +89,14 @@ vision_align:
   max_stage_iterations: 30
   max_moves: 120
   max_worsening: 3
+  # 성공한 팔별 회전·병진 학습값을 검증 후 재사용한다. --relearn은 저장값 읽기를 생략한다.
+  cache:
+    enabled: true
+    # 카메라 이동·캘리브레이션/추적 모델 변경·다시 잡기 후에는 변경하거나 --relearn 사용.
+    context_id: setup_20261119
+    max_age_s: 86400.0
+    position_radius_m: 0.03
+    rotation_radius_rad: 0.15
+    # 정지 평균 불확실성(표준오차·창 내 drift)과 아래 하한 중 큰 값으로 검증한다.
+    position_noise_floor_m: 0.00005
+    angle_noise_floor_rad: 0.0005

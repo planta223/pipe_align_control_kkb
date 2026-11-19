@@ -155,7 +155,11 @@ TEST(Configuration, NumericLimitsAndAddressesAreValidated) {
   yaml = YAML::LoadFile(config_dir+"control.yaml");
   yaml["robots"]["right"]["ip"] = yaml["robots"]["left"]["ip"].as<std::string>();
   EXPECT_ANY_THROW(xm::read_config(yaml));
-  EXPECT_NEAR(config().limits.effective_joint_speed(),.08,1e-12);
+  auto nominal = YAML::LoadFile(config_dir+"control.yaml");
+  nominal["limits"]["control_rate_hz"] = 100.;
+  nominal["limits"]["joint_speed_coefficient_rad_s"] = .2;
+  nominal["limits"]["joint_step_dt_cap_s"] = .004;
+  EXPECT_NEAR(xm::read_config(nominal).limits.effective_joint_speed(),.08,1e-12);
 }
 TEST(Configuration, PosesRejectNonRigidAndUnknownValues) {
   auto poses = YAML::LoadFile(config_dir+"arm_poses.yaml");
@@ -169,6 +173,49 @@ TEST(Configuration, PosesRejectNonRigidAndUnknownValues) {
   matrix = YAML::Clone(poses["poses"]["init1"]["left"]["base_T_flange"]);
   matrix[0][0] = ".nan";
   EXPECT_ANY_THROW(xm::matrix_pose(matrix));
+}
+TEST_F(MotionTest, NominalModelParallelQueriesUseIndependentKdlCaches) {
+  std::array<std::vector<xm::Joints>,2> joints;
+  std::array<std::vector<xm::Pose>,2> poses;
+  for(size_t side=0;side<2;++side) for(int i=0;i<100;++i) {
+    auto q=seed(side==1); q[0]+=.001*i; q[3]-=.0005*i;
+    joints[side].push_back(q); poses[side].push_back(model.fk(q));
+  }
+  const auto verify=[&](size_t side) {
+    for(int repeat=0;repeat<10;++repeat) for(size_t i=0;i<joints[side].size();++i)
+      if(!xm::pose_close(model.fk(joints[side][i]),poses[side][i],1e-12,1e-12)) return false;
+    return true;
+  };
+  auto first=std::async(std::launch::async,verify,0);
+  auto second=std::async(std::launch::async,verify,1);
+  EXPECT_TRUE(first.get()); EXPECT_TRUE(second.get());
+}
+TEST_F(MotionTest, KinematicsMetricsCountQueriesIncludingFailures) {
+  xm::SdkKinematics provider(left,model,tcp);
+  const auto flange=provider.fk(left.q);
+  EXPECT_LT((provider.solve(flange,left.q)-left.q).norm(),1e-12);
+  EXPECT_EQ(provider.stats().fk_calls,2u);
+  EXPECT_EQ(provider.stats().solve_calls,1u);
+  EXPECT_EQ(provider.stats().solve_iterations,1u);
+  EXPECT_EQ(provider.stats().fallback_ik_calls,0u);
+  EXPECT_GE(provider.stats().fk_seconds,0);
+  EXPECT_GE(provider.stats().solve_seconds,0);
+  left.fail_fk=true;
+  EXPECT_THROW(provider.fk(left.q),std::runtime_error);
+  EXPECT_EQ(provider.stats().fk_calls,3u);
+}
+TEST_F(MotionTest, IndividualJointBoundsCoverEveryInterpolatedSegment) {
+  auto s=session(true); s->prepare(clock);
+  for(const auto& arm:s->arms()) {
+    const auto bounds=arm.plan->joint_speed_bounds();
+    EXPECT_NEAR(bounds.maxCoeff(),arm.plan->joint_speed_bound(),1e-12);
+    EXPECT_TRUE((bounds.array()>=0).all());
+    const double dt=arm.plan->duration()/2000;
+    for(int i=1;i<=2000;++i) {
+      const xm::Joints speed=(arm.plan->sample(i/2000.)-arm.plan->sample((i-1)/2000.)).cwiseAbs()/dt;
+      EXPECT_TRUE((speed.array()<=bounds.array()+1e-8).all());
+    }
+  }
 }
 TEST_F(MotionTest, OfficialModelRoundTripAndJointLimits) {
   EXPECT_LT((model.solve(model.fk(seed()),seed())-seed()).norm(),1e-8);
@@ -374,16 +421,21 @@ TEST_F(MotionTest, StationaryJointVariationConnectsWithoutRelaxingCommandLimits)
     const std::array<xm::Joints,2> measured{left.q,right.q};
     const int enables=left.enables+right.enables;
     bool checked=false;
-    s->set_start_path_validator([&](const std::vector<xm::MotionArm>& connected,double duration) {
+    s->set_start_path_validator([&](const std::vector<xm::MotionArm>& connected,
+                                  double duration,double connection_duration) {
       checked=true;
       EXPECT_EQ(left.enables+right.enables,enables);
       EXPECT_FALSE(left.owned);EXPECT_FALSE(right.owned);
       const double bridge=s->start_connection_duration()/s->duration();
       EXPECT_GT(bridge,0);EXPECT_LT(bridge,1);
+      EXPECT_GT(connection_duration,0);
+      EXPECT_LT(connection_duration,duration);
+      EXPECT_NEAR(connection_duration/duration,bridge,1e-12);
       for(size_t side=0;side<2;++side) {
         EXPECT_LT((connected[side].plan->sample(0)-measured[side]).norm(),1e-12);
         EXPECT_TRUE(xm::pose_close(connected[side].plan->flange(0),model.fk(measured[side]),1e-8,1e-8));
         EXPECT_DOUBLE_EQ(connected[side].plan->duration(),duration);
+        EXPECT_LT((connected[side].plan->sample(connection_duration/duration)-original[side][0]).norm(),1e-12);
         for(int i=0;i<=20;++i) {
           const double fraction=bridge+(1-bridge)*i/20.;
           EXPECT_LT((connected[side].plan->sample(fraction)-original[side][i]).norm(),1e-10);
@@ -425,7 +477,7 @@ TEST_F(MotionTest, StationaryJointVariationConnectsWithoutRelaxingCommandLimits)
 TEST_F(MotionTest, StartupCollisionRejectionAndLateDriftNeverEnableEitherArm) {
   for(bool collision:{true,false}) {
     auto s=session(true);s->prepare(clock);left.q[2]+=.000185946;
-    s->set_start_path_validator([&](const std::vector<xm::MotionArm>&,double) {
+    s->set_start_path_validator([&](const std::vector<xm::MotionArm>&,double,double) {
       if(collision) throw std::runtime_error("synthetic start connection collision");
       left.q[2]+=.02;
     });

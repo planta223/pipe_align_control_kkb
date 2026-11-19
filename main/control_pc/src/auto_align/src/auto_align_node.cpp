@@ -14,17 +14,20 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <iomanip>
 #include <thread>
+#include <atomic>
 
 namespace aa = auto_align;
 namespace xm = xarm_motion;
 namespace {
-volatile std::sig_atomic_t interrupted = 0;
-void handle_signal(int) { interrupted = 1; }
+std::atomic<int> interrupted{0};
+static_assert(std::atomic<int>::is_always_lock_free,"Signal cancellation must be lock-free.");
+void handle_signal(int) { interrupted.store(1,std::memory_order_relaxed); }
 constexpr const char* usage =
-  "사용법: ros2 run auto_align auto_align --step pre_align_ready\n"
+  "사용법: ros2 run auto_align auto_align --step pre_align_ready [--auto-start]\n"
   "        ros2 run auto_align auto_align --step vision_measure  # step4 측정 전용, SDK 연결 없음\n"
-  "        ros2 run auto_align auto_align --step vision_align    # step4~7 UVS\n"
+  "        ros2 run auto_align auto_align --step vision_align [--auto-start] [--relearn]  # step4~7 UVS\n"
   "control.yaml의 execution.auto_align_enabled=true가 필요합니다. pre_align_ready.target_pose를 목표로 사용합니다.\n";
 void require(bool condition, const std::string& message) {
   if (!condition) throw std::runtime_error(message);
@@ -105,16 +108,15 @@ int main(int argc, char** argv) {
   std::vector<std::unique_ptr<xm::XArmBackend>> backends;
   int result = 0;
   try {
-    require((argc == 3 || argc == 5) && std::string(argv[1]) == "--step" &&
-      std::string(argv[2]) == "pre_align_ready" &&
-      (argc == 3 || std::string(argv[3]) == "--expected-inputs"),usage);
+    require(argc>=3 && std::string(argv[1])=="--step" && std::string(argv[2])=="pre_align_ready",usage);
+    const auto options=aa::run_options(argc,argv);
     const auto root = std::filesystem::path(AUTO_ALIGN_CONTROL_PC_DIR);
     const auto control_text = read_file(root/"config/control.yaml");
     const auto control = YAML::Load(control_text);
     aa::require_execution_enabled(control); // SDK 생성·접속보다 먼저 파일 허용값을 검사한다.
     const auto coordinates_text = read_file(root/"config/arm_poses.yaml");
-    if (argc == 5)
-      require(aa::input_fingerprint(control_text,coordinates_text) == argv[4],
+    if (!options.expected_inputs.empty())
+      require(aa::input_fingerprint(control_text,coordinates_text) == options.expected_inputs,
         "시각화 준비 중 control.yaml 또는 arm_poses.yaml이 바뀌었습니다. 다시 실행하세요.");
     const auto coordinates = YAML::Load(coordinates_text);
     const auto target = aa::ready_target(control,coordinates);
@@ -156,22 +158,35 @@ int main(int argc, char** argv) {
       arms.push_back({side,backends.back().get(),models[i].get(),tcp,actual.base_T_tcp*tcp.inverse(),
         target.flange[i],actual,nullptr});
     }
+    {
+      std::ostringstream inputs;
+      inputs<<std::setprecision(12)<<"INPUTS control_poses_hash="<<aa::input_fingerprint(control_text,coordinates_text)
+        <<" environment_hash="<<aa::input_fingerprint(YAML::Dump(environment),"")
+        <<" left_q_rad=["<<arms[0].prepared.joints.transpose()<<"] right_q_rad=["<<arms[1].prepared.joints.transpose()<<"]"
+        <<" linear_m_s="<<config.limits.linear_speed<<" angular_rad_s="<<config.limits.angular_speed
+        <<" joint_coefficient="<<config.limits.joint_speed<<" joint_dt_cap_s="<<config.limits.joint_dt_cap
+        <<" joint_acceleration_rad_s2="<<config.limits.joint_acceleration<<" auto_start="<<options.auto_start;
+      RCLCPP_INFO(monitor->get_logger(),"PERF: %s",inputs.str().c_str());
+    }
     checker.check({arms[0].prepared.joints,arms[1].prepared.joints});
     monitor->status("PREPARING: vertical → horizontal → orientation / 전체 SDK 경로 계산");
     aa::PreAlignReady step(arms,mounts,config.limits,cancelled);
+    RCLCPP_INFO(monitor->get_logger(),"PERF: %s",step.planning_diagnostics().c_str());
     const double duration = arms[0].plan->duration();
     require(std::abs(duration-arms[1].plan->duration()) < 1e-9,"양팔 경로 시간이 다릅니다.");
     monitor->status("PREPARING: 전체 경로와 구간 사이 충돌 여유거리 검사");
-    checker.check_path([&](double time) -> aa::DualJoints {
+    checker.check_path_joint_bounds([&](double time) -> aa::DualJoints {
       return {arms[0].plan->sample(time/duration),arms[1].plan->sample(time/duration)};
-    },duration,{arms[0].plan->joint_speed_bound(),arms[1].plan->joint_speed_bound()},cancelled);
+    },duration,{arms[0].plan->joint_speed_bounds(),arms[1].plan->joint_speed_bounds()},cancelled);
+    RCLCPP_INFO(monitor->get_logger(),"PERF: COLLISION phase=initial %s",checker.diagnostics().c_str());
     xm::MotionSession session(std::move(arms),config.limits,cancelled);
-    session.set_start_path_validator([&](const std::vector<xm::MotionArm>& connected,double seconds) {
-      monitor->status("PREPARING: 실측 시작 자세 연결 경로의 충돌 여유거리 재검사");
+    session.set_start_path_validator([&](const std::vector<xm::MotionArm>& connected,
+                                        double path_seconds,double connection_seconds) {
+      monitor->status("PREPARING: 새 시작 연결 구간만 충돌 여유거리 재검사 / 기존 경로 검사 결과 재사용");
       double published=0;
-      checker.check_path([&](double t)->aa::DualJoints {
-        return {connected[0].plan->sample(t/seconds),connected[1].plan->sample(t/seconds)};
-      },seconds,{connected[0].plan->joint_speed_bound(),connected[1].plan->joint_speed_bound()},[&] {
+      checker.check_path_joint_bounds([&](double t)->aa::DualJoints {
+        return {connected[0].plan->sample(t/path_seconds),connected[1].plan->sample(t/path_seconds)};
+      },connection_seconds,{connected[0].plan->joint_speed_bounds(),connected[1].plan->joint_speed_bounds()},[&] {
         if(cancelled()) return true;
         if(xm::steady_seconds()-published>=.05) {
           monitor->feedback(connected,{connected[0].backend->read(),connected[1].backend->read()});
@@ -179,12 +194,13 @@ int main(int argc, char** argv) {
         }
         return cancelled();
       });
+      RCLCPP_INFO(monitor->get_logger(),"PERF: COLLISION phase=start_connection %s",checker.diagnostics().c_str());
     });
     session.prepare_planned(xm::steady_seconds());
     monitor->status("READY: pre_align_ready / 목표 "+target.name+" / 충돌 여유 "+std::to_string(collision_config.margin*1000)+
-      "mm / 예상 "+std::to_string(session.duration())+"초 / Enter로 실행");
+      "mm / 예상 "+std::to_string(session.duration())+"초 / "+(options.auto_start?"자동 시작":"Enter로 실행"));
     monitor->diagnostics(session.diagnostics());
-    while (!cancelled()) {
+    while (!options.auto_start && !cancelled()) {
       monitor->feedback(session.arms(),session.feedback(xm::steady_seconds()));
       rclcpp::spin_some(monitor);
       if (enter_pressed()) break;

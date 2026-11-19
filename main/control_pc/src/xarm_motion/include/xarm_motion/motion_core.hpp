@@ -71,6 +71,7 @@ public:
   virtual double duration() const = 0;
   // 모든 관절에 적용되는 연속 시간 속도 상한이다.
   virtual double joint_speed_bound() const = 0;
+  virtual Joints joint_speed_bounds() const { return Joints::Constant(joint_speed_bound()); }
 };
 
 // 경로 전체를 먼저 계산한 뒤 관절 속도·가속도에 맞춰 시간을 늘린다.
@@ -83,11 +84,13 @@ public:
   Pose flange(double fraction) const override;
   double duration() const override { return duration_; }
   double joint_speed_bound() const override { return joint_speed_bound_; }
+  Joints joint_speed_bounds() const override { return joint_speed_bounds_; }
 private:
   std::vector<Joints> knots_, tangents_;
   std::vector<Pose> fk_cache_;
   double duration_ = 0;
   double joint_speed_bound_ = 0;
+  Joints joint_speed_bounds_ = Joints::Zero();
 };
 
 struct Feedback {
@@ -106,16 +109,22 @@ public:
   virtual void send(const Joints& joints) = 0;
   virtual void stop() = 0;
 };
+struct KinematicsStats {
+  size_t fk_calls = 0, solve_calls = 0, solve_iterations = 0, fallback_ik_calls = 0;
+  double fk_seconds = 0, solve_seconds = 0, fallback_ik_seconds = 0;
+};
 class SdkKinematics final : public Kinematics {
 public:
   SdkKinematics(ArmBackend& backend, const ArmKinematics& bounds, Pose flange_T_tcp);
   Pose fk(const Joints& joints) const override;
   Joints solve(const Pose& target, const Joints& seed) const override;
   void check(const Joints& joints) const override;
+  const KinematicsStats& stats() const { return stats_; }
 private:
   ArmBackend& backend_;
   const ArmKinematics& bounds_;
   Pose flange_T_tcp_;
+  mutable KinematicsStats stats_;
 };
 struct MotionArm {
   std::string side;
@@ -129,7 +138,8 @@ struct MotionArm {
 // SDK와 터미널 입력을 분리해 연결 없는 테스트에서도 실행 순서를 검증한다.
 class MotionSession {
 public:
-  using StartPathValidator = std::function<void(const std::vector<MotionArm>&,double)>;
+  // Full connected path, its native duration, and the new prefix duration.
+  using StartPathValidator = std::function<void(const std::vector<MotionArm>&,double,double)>;
   MotionSession(std::vector<MotionArm> arms, Limits limits, std::function<bool()> cancelled,
                 std::function<double()> clock = steady_seconds);
   ~MotionSession();
@@ -139,7 +149,9 @@ public:
   void prepare_planned(double now);
   void begin(double now);
   // Invoked before enable if measured joints require a new start connection.
-  // Collision-aware callers must check the connected path here as well.
+  // Check only t in [0, connection_duration], sampling each plan at
+  // t/path_duration. The original suffix is unchanged; collision-aware callers
+  // must already have checked it with the same fixed environment and settings.
   void set_start_path_validator(StartPathValidator validator) { start_validator_ = std::move(validator); }
   bool tick(double now);
   void stop();

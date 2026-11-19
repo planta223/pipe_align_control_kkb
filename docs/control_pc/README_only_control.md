@@ -88,6 +88,8 @@ ros2 run simulation_validation live_control --arm both --step pre_align_ready
 오류·Ctrl+C·완료 시 양팔에 중지를 요청한다. 완료 후 RViz는 마지막 수신 자세를 유지한다. FoundationPose는 자동 실행하지 않는다.
 
 RViz 없이 제어기만 실행하려면 `ros2 run auto_align auto_align --step pre_align_ready`를 사용한다.
+준비·검사 후 Enter 없이 시작하려면 명령 뒤에 `--auto-start`를 추가한다. RViz 실행 래퍼의
+`--step pre_align_ready`·`--step vision_align`에도 전달할 수 있으며, 기본 수동 시작과 실행 허용·검사는 유지한다.
 사용 후 `execution.auto_align_enabled`를 `false`로 되돌린다. 실물 검증은 사용자가 직접 실행·Enter 입력으로 수행한다.
 
 ## 6. 준비 이동 후 비전 정렬 — step4~7
