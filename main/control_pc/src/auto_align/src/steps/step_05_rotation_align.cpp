@@ -56,17 +56,29 @@ bool VisionAlign::fit_probes(size_t side,bool rotation) {
   auto& j=jacobians_[side][kind];j=fit.solve(weighted_responses).transpose();
   const Eigen::JacobiSVD<Eigen::MatrixXd> information(signal);
   const double minimum=information.singularValues().minCoeff();
-  bool usable=minimum>=settings_.minimum_response_snr && j.allFinite();
+  const bool signal_ok=minimum>=settings_.minimum_response_snr;
+  bool matrix_ok=j.allFinite(),residual_ok=true;
   try {
     if(rotation) visual_solve(j.bottomRows<2>(),Eigen::Vector2d::Zero(),1,settings_.damping,settings_.max_rotation);
     else visual_solve(j.topRows<3>(),Eigen::Vector3d::Zero(),1,settings_.damping,settings_.max_translation);
-  } catch(const std::runtime_error&) { usable=false; }
-  for(const auto& sample:samples) {
+  } catch(const std::runtime_error&) { matrix_ok=false; }
+  double worst_ratio=0;size_t worst_probe=0;
+  for(size_t index=0;index<samples.size();++index) {
+    const auto& sample=samples[index];
     const Features residual=sample.change-j*sample.actual;
     const double error=rotation?residual.tail<2>().norm():residual.head<3>().norm();
     const double magnitude=rotation?sample.change.tail<2>().norm():sample.change.head<3>().norm();
-    usable &= error<=std::max(3*(rotation?sample.angle_noise:sample.position_noise),.35*magnitude);
+    const double limit=std::max(3*(rotation?sample.angle_noise:sample.position_noise),.35*magnitude);
+    const double ratio=error/limit;
+    if(ratio>worst_ratio) {worst_ratio=ratio;worst_probe=index+1;}
+    residual_ok &= error<=limit;
   }
+  const bool usable=signal_ok && matrix_ok && residual_ok;
+  std::string reasons;
+  if(!signal_ok) reasons+="signal|";
+  if(!matrix_ok) reasons+="matrix|";
+  if(!residual_ok) reasons+="residual|";
+  if(reasons.empty()) reasons="none";else reasons.pop_back();
   std::ostringstream report;
   const Eigen::MatrixXd task=rotation?Eigen::MatrixXd(j.bottomRows<2>()):Eigen::MatrixXd(j.topRows<3>());
   const Eigen::JacobiSVD<Eigen::MatrixXd> task_svd(task);
@@ -74,6 +86,7 @@ bool VisionAlign::fit_probes(size_t side,bool rotation) {
     <<" probes="<<n<<" task_dimensions="<<rows<<" minimum_signal="<<minimum
     <<" required="<<settings_.minimum_response_snr<<" input_sigma_min="<<input_svd.singularValues().minCoeff()
     <<" task_sigma_min="<<task_svd.singularValues().minCoeff()<<" result="<<(usable?"accepted":"insufficient")
+    <<" failure_reasons="<<reasons<<" worst_residual_probe="<<worst_probe<<" worst_residual_ratio="<<worst_ratio
     <<" jacobian_row_major=[";
   for(int row=0;row<5;++row) for(int col=0;col<3;++col) report<<j(row,col)<<' ';
   report<<']';
@@ -104,7 +117,7 @@ void VisionAlign::learn(size_t side,bool rotation) {
   for(int axis=0;axis<3;++axis) probe(side,rotation,amount*Eigen::Vector3d::Unit(axis),std::to_string(axis));
   bool usable=fit_probes(side,rotation);
   if(!usable && rotation) {retry_rotation(side);usable=fit_probes(side,rotation);}
-  require(usable,"신규 학습의 관측 정보가 부족합니다. 시험 한도 안에서 신뢰도를 확보하지 못했습니다.");
+  require(usable,"신규 학습 품질 검사 불합격: UVS_LEARN_QUALITY의 failure_reasons를 확인하세요. 시험 한도를 소진했습니다.");
   learned_[side][kind]=true;
 }
 void VisionAlign::refresh(size_t side,bool rotation) {

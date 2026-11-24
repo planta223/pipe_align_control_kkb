@@ -301,3 +301,19 @@ step7 성공 후에만 저장하므로 실패·중단한 실행으로 기존 정
 `PERF: VISION_MOVE`는 경로·이동 시간과 실제 SDK 변위, `PERF: VISION_MEASURE`는 대기·평균 시간과
 실패한 창을 포함한 양팔 위치·각도 RMS를 기록한다. 실행 설정은 `VISION_CONFIG:`에 남는다.
 자세한 판정 기준은 [auto_align 안내](../../main/control_pc/src/auto_align/README.md#학습값-저장검증재사용)를 따른다.
+
+### 학습 실패 원인 진단 — 영상과 SDK를 함께 기록
+
+비전 PC의 카메라·FoundationPose를 유지하고 다른 팔 제어기를 종료한 상태에서 실행한다.
+다음 명령은 필수 카메라/비전 토픽 수신을 확인하고, 원본 영상·카메라 정보·비전 pose·SDK 피드백을
+rosbag으로 기록하면서 `vision_align --relearn --auto-start`를 실행한다. 회전 시험·이동 제한은 기존과 같다.
+
+```bash
+cd ~/pipe_align_control_kkb
+bash main/control_pc/tools/diagnose_vision_align.sh --run-align
+```
+
+종료 시 `main/control_pc/_log/vision_diagnostics/날짜_시간_접미사/`에 rosbag, 설정 사본과 해당 제어 로그를 남긴다.
+이 자료로 실제 파이프가 SDK 회전을 따라갔는지, 영상 추정이 실제 파이프 방향을 따라갔는지 대조한다.
+필수 토픽을 받지 못하면 제어기를 시작하지 않는다. `--run-align`을 빼면 로봇 제어 없이 기본 60초만 기록한다.
+기록 시간은 `--duration 초`로 지정할 수 있다. 제어 포함 기본 기록 상한은 330초다.
